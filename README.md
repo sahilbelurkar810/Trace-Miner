@@ -122,7 +122,7 @@ via *Load sample bundle* → *Process logs*.
 
 ## Quick start
 
-> **Why a server?** Opening `Trace Miner.html` directly via `file://` will fail.
+> **Why a server?** Opening `index.html` directly via `file://` will fail.
 > Babel-Standalone fetches the `<script type="text/babel">` sources, and
 > browsers block `file://` fetches cross-origin. Any local HTTP server solves it.
 
@@ -160,7 +160,7 @@ VS Code's *Live Server* extension, etc. — they all work.
 ### Then open
 
 ```
-http://127.0.0.1:8080/Trace%20Miner.html
+http://127.0.0.1:8080/
 ```
 
 First load runs a ~3.4 s cinematic boot sequence; after that the **Miner** page
@@ -172,13 +172,13 @@ see the full flow end-to-end without uploading anything.
 
 ```bash
 # Windows (PowerShell)
-py -m http.server 8080 ; Start-Process "http://127.0.0.1:8080/Trace%20Miner.html"
+py -m http.server 8080 ; Start-Process "http://127.0.0.1:8080/"
 
 # macOS
-python3 -m http.server 8080 & open "http://127.0.0.1:8080/Trace%20Miner.html"
+python3 -m http.server 8080 & open "http://127.0.0.1:8080/"
 
 # Linux
-python3 -m http.server 8080 & xdg-open "http://127.0.0.1:8080/Trace%20Miner.html"
+python3 -m http.server 8080 & xdg-open "http://127.0.0.1:8080/"
 ```
 
 </details>
@@ -217,7 +217,7 @@ python3 -m http.server 8080 & xdg-open "http://127.0.0.1:8080/Trace%20Miner.html
 
 ```
 trace-miner/
-  Trace Miner.html              entry point — loads React/Babel UMD + scripts
+  index.html                    entry point — loads React/Babel UMD + scripts
   tweaks-panel.jsx              reusable tweaks-panel shell (radio, toggle, slider...)
   README.md                     this file
 
@@ -723,7 +723,7 @@ Either:
 
 1. Write a new component in `components/` that registers `window.YourPage`.
 2. Add `<script type="text/babel" src="components/YourPage.jsx?v=N"/>` to
-   `Trace Miner.html`.
+   `index.html`.
 3. Add a nav button in `App.jsx`'s `<nav className="topnav">` and a case
    in the `page === 'yours'` render block.
 
@@ -760,7 +760,7 @@ block.
 <details>
 <summary><b>The page is blank / scripts don't load.</b></summary>
 
-You probably opened `Trace Miner.html` via a `file://` path. Serve it over
+You probably opened `index.html` via a `file://` path. Serve it over
 HTTP instead — see [Quick start](#quick-start). Open DevTools → Console and
 you should see a clear CORS or "failed to fetch" error confirming this.
 
@@ -774,7 +774,7 @@ different port:
 
 ```bash
 python -m http.server 5173
-# then open http://127.0.0.1:5173/Trace%20Miner.html
+# then open http://127.0.0.1:5173/
 ```
 
 </details>
@@ -822,9 +822,9 @@ Base page before refreshing. There is no import path yet — see
 <summary><b>Fonts look wrong / fall back to system sans.</b></summary>
 
 The bundled Aptos TTFs live in `ds/fonts/`. `ds/colors_and_type.css` tries
-`local('Aptos')` first, then the bundled files. If you moved `ds/` or served
-from a different root, the relative `url(...)` paths in that CSS will 404 —
-keep `ds/` a sibling of `Trace Miner.html`.
+`local('Aptos')` first, then the bundled files via a CSS-relative `url('fonts/...')`.
+If you moved `ds/fonts/` or served from a different root, that path will 404 —
+keep `fonts/` a sibling of `colors_and_type.css` inside `ds/`.
 
 </details>
 
