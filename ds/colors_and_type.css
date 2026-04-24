@@ -1,0 +1,260 @@
+/* ============================================================
+   msg for automotive — Design System
+   Verified sources:
+     • msg Brandcenter (https://www.msg.group/brandcenter)
+     • msg Unternehmenspräsentation 2026 (public corporate deck)
+     • 20260420_m4a_master.pptx — the msg for automotive slide master
+       (theme: msg_Colors · font scheme: msg_Fonts_Aptos)
+   ============================================================ */
+
+/* -- Webfonts --------------------------------------------------
+   Brand fonts: Aptos (major) + Aptos Light (minor), served from
+   the project's fonts/ directory. local() lookup preferred so
+   systems with Microsoft 365 installed pick up the installed face.
+*/
+@font-face {
+  font-family: 'Aptos';
+  src: local('Aptos'),
+       url('ds/fonts/Aptos.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Aptos';
+  src: local('Aptos Bold'),
+       url('ds/fonts/Aptos-Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Aptos Light';
+  src: local('Aptos Light'),
+       url('ds/fonts/Aptos-Light.ttf') format('truetype');
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  /* ── Primary brand palette (Brandcenter + master theme) ─────── */
+  --msg-red:        #A01441;   /* accent1 / logo dot / active links
+                                  CMYK 0/100/60/37 · Pantone 194 · RAL 3003
+                                  NEVER screen this back (Brandcenter rule). */
+  --msg-gray:       #6F6F6F;   /* wordmark colour · primary text tint
+                                  CMYK 0/0/0/70 · Pantone Cool Gray 11 */
+  --msg-petrol:     #56A3BC;   /* secondary brand accent
+                                  Pantone 2209 C · for surfaces/secondary highlight */
+
+  /* Theme secondary darks/lights from master (dk2, lt2) */
+  --msg-ink:        #4A4A4A;   /* dk2 — heading/body ink on white */
+  --msg-stone:      #ACACAC;   /* lt2 — divider / dim text */
+
+  /* ── Six chart / highlight accents (from msg_Colors theme) ──── */
+  --accent-red:     #A01441;   /* accent1 */
+  --accent-teal:    #139EAD;   /* accent2 */
+  --accent-yellow:  #F5B510;   /* accent3 */
+  --accent-green:   #70DC51;   /* accent4 */
+  --accent-blue:    #5866E3;   /* accent5 */
+  --accent-pink:    #D74B94;   /* accent6 */
+
+  /* ── Gray ramp (derived tints of --msg-gray, allowed ≤70%) ──── */
+  --gray-100:       #F4F4F4;
+  --gray-200:       #E8E8E8;
+  --gray-300:       #D1D1D1;
+  --gray-400:       #ACACAC;   /* = --msg-stone */
+  --gray-500:       #8A8A8A;
+  --gray-600:       #6F6F6F;   /* = --msg-gray */
+  --gray-700:       #4A4A4A;   /* = --msg-ink */
+  --gray-800:       #3C3C3C;
+  --gray-900:       #222222;
+
+  /* ── Red ramp (UI states — marketing stays at --msg-red) ─────── */
+  --red-500:        #A01441;
+  --red-600:        #84103A;
+  --red-700:        #6B0C2F;
+
+  /* ── Semantic foreground ────────────────────────────────────── */
+  --fg-1:           var(--msg-ink);    /* primary text (dk2) */
+  --fg-2:           var(--gray-600);
+  --fg-3:           var(--gray-500);
+  --fg-accent:      var(--msg-red);
+  --fg-on-dark:     #FFFFFF;
+
+  /* ── Semantic background ────────────────────────────────────── */
+  --bg-canvas:      #FFFFFF;
+  --bg-subtle:      var(--gray-100);
+  --bg-muted:       var(--gray-200);
+  --bg-dark:        var(--gray-900);
+  --bg-accent:      var(--msg-red);
+
+  /* ── Borders / dividers ─────────────────────────────────────── */
+  --border-hair:    rgba(111,111,111,0.18);
+  --border-1:       var(--gray-300);
+  --border-2:       var(--gray-500);
+  --border-accent:  var(--msg-red);
+
+  /* ── Typography ─────────────────────────────────────────────── */
+  /* Body stack: Aptos Light is the minor/body face per master */
+  --font-body:      'Aptos Light', 'Aptos', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+  --font-display:   'Aptos', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+  --font-sans:      var(--font-body);   /* back-compat alias */
+  --font-mono:      'Cascadia Mono', 'Consolas', 'SF Mono', monospace;
+
+  --fw-light:       300;
+  --fw-regular:     400;
+  --fw-bold:        700;
+
+  /* Display sizes — tuned to the master (16:9, 1920×1080).        */
+  --fs-display:     64px;   /* cover hero */
+  --fs-h1:          44px;   /* slide headline  (layout 04 pattern) */
+  --fs-h2:          28px;   /* slide subtitle / section head      */
+  --fs-h3:          22px;   /* column heading                     */
+  --fs-body-lg:     20px;
+  --fs-body:        16px;   /* body copy — Aptos Light            */
+  --fs-body-sm:     14px;
+  --fs-caption:     12px;
+  --fs-micro:       10px;   /* footer — master footer is small     */
+
+  --lh-tight:       1.15;
+  --lh-snug:        1.3;
+  --lh-normal:      1.45;
+  --lh-loose:       1.6;
+
+  --tracking-tight: -0.01em;
+  --tracking-normal: 0;
+  --tracking-wide:  0.04em;
+
+  /* ── Spacing (8-pt grid) ────────────────────────────────────── */
+  --sp-0:   0px;
+  --sp-1:   4px;
+  --sp-2:   8px;
+  --sp-3:   12px;
+  --sp-4:   16px;
+  --sp-5:   24px;
+  --sp-6:   32px;
+  --sp-7:   48px;
+  --sp-8:   64px;
+  --sp-9:   96px;
+
+  /* ── Radii — msg is almost entirely SQUARE. ─────────────────── */
+  --radius-0:       0px;
+  --radius-1:       2px;
+  --radius-2:       4px;
+  --radius-pill:    999px;
+
+  /* ── Elevation — flat. ──────────────────────────────────────── */
+  --shadow-0:       none;
+  --shadow-1:       0 1px 2px rgba(0,0,0,0.06);
+  --shadow-2:       0 4px 12px rgba(0,0,0,0.08);
+  --shadow-floating:0 12px 32px rgba(0,0,0,0.12);
+
+  /* ── Motion ─────────────────────────────────────────────────── */
+  --ease-standard:  cubic-bezier(0.2, 0, 0, 1);
+  --ease-emph:      cubic-bezier(0.2, 0, 0, 1);
+  --dur-fast:       120ms;
+  --dur-med:        200ms;
+  --dur-slow:       320ms;
+
+  /* ── Slide geometry (from master, 1920×1080) ───────────────── */
+  --slide-w:        1920px;
+  --slide-h:        1080px;
+  --slide-margin-x: 72px;
+  --slide-margin-y: 60px;
+  --slide-title-x:  72px;
+  --slide-title-y:  72px;
+  --slide-footer-y: 32px;
+
+  --rule-accent-h:  4px;
+}
+
+/* ── Base element styles ───────────────────────────────────────── */
+html, body {
+  font-family: var(--font-body);
+  font-weight: var(--fw-light);
+  font-size:   var(--fs-body);
+  line-height: var(--lh-normal);
+  color:       var(--fg-1);
+  background:  var(--bg-canvas);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+h1, .h1 {
+  font-family: var(--font-display);
+  font-weight: var(--fw-light);
+  font-size:   var(--fs-h1);
+  line-height: var(--lh-tight);
+  color:       var(--fg-1);
+  letter-spacing: var(--tracking-tight);
+  margin: 0;
+}
+h2, .h2 {
+  font-family: var(--font-display);
+  font-weight: var(--fw-light);
+  font-size:   var(--fs-h2);
+  line-height: var(--lh-snug);
+  color:       var(--fg-1);
+  margin: 0;
+}
+h3, .h3 {
+  font-family: var(--font-display);
+  font-weight: var(--fw-bold);
+  font-size:   var(--fs-h3);
+  line-height: var(--lh-snug);
+  color:       var(--fg-1);
+  margin: 0;
+}
+p, .p {
+  font-family: var(--font-body);
+  font-weight: var(--fw-light);
+  font-size:   var(--fs-body);
+  line-height: var(--lh-normal);
+  color:       var(--fg-1);
+  margin: 0;
+}
+small, .caption {
+  font-size:  var(--fs-caption);
+  color:      var(--fg-3);
+}
+strong, b {
+  font-family: var(--font-display);
+  font-weight: var(--fw-bold);
+}
+.display {
+  font-family: var(--font-display);
+  font-weight: var(--fw-light);
+  font-size:   var(--fs-display);
+  line-height: var(--lh-tight);
+  letter-spacing: var(--tracking-tight);
+  color: var(--fg-1);
+}
+.eyebrow {
+  font-family: var(--font-display);
+  font-size: var(--fs-caption);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+  color: var(--msg-red);
+  font-weight: var(--fw-bold);
+}
+
+/* Red underline accent on content slide titles */
+.rule-accent {
+  display: block;
+  width: 80px;
+  height: var(--rule-accent-h);
+  background: var(--msg-red);
+  margin: var(--sp-3) 0;
+}
+
+/* Red dot — echoes the dot in the logo. */
+.red-dot {
+  display: inline-block;
+  width: 0.5em;
+  height: 0.5em;
+  background: var(--msg-red);
+  border-radius: 50%;
+  vertical-align: baseline;
+  margin-left: 0.1em;
+}

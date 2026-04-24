@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:api.anthropic.com)",
+      "Bash(mkdir -p /tmp/design_extract)",
+      "Bash(cp /c/Users/anants/.claude/projects/C--Users-anants-Trace-Miner/7b2e0f59-543d-49c4-bd1d-4aecc261dc0b/tool-results/webfetch-1777018615021-14ks5k.bin /tmp/design_extract/design.tar.gz)",
+      "Read(//tmp/**)",
+      "Bash(tar -xzf design.tar.gz)",
+      "Bash(cp *)",
+      "Bash(python -m http.server 5173)",
+      "Bash(echo \"started pid=$!\")",
+      "Bash(curl -s -o /dev/null -w \"HTTP %{http_code} · %{size_download} bytes\\\\n\" \"http://localhost:5173/Trace%20Miner.html\")",
+      "Bash(curl -s -o /dev/null -w \"components/App.jsx: HTTP %{http_code}\\\\n\" \"http://localhost:5173/components/App.jsx\")",
+      "Bash(curl -s -o /dev/null -w \"data/sample-logs.js: HTTP %{http_code}\\\\n\" \"http://localhost:5173/data/sample-logs.js\")",
+      "Bash(kill 1036)"
+    ]
+  }
+}
