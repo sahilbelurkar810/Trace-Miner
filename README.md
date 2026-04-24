@@ -1,13 +1,34 @@
-# Trace Miner
+<div align="center">
 
-**Failure Pattern Intelligence for msg for automotive**
+<img src="https://readme-typing-svg.demolab.com?font=Fira+Code&size=34&duration=2600&pause=800&color=A01441&center=true&vCenter=true&multiline=true&width=760&height=110&lines=Trace+Miner;Failure+Pattern+Intelligence" alt="Trace Miner — Failure Pattern Intelligence" />
 
-Trace Miner is a zero-build, browser-native log analysis workbench. It ingests
-raw log files, mines them for recurring failure patterns using an in-browser
-TF-IDF + cosine-similarity engine, surfaces matches against a growing
-knowledge base of past incidents, and presents everything — the scan itself,
-the patterns, the reader, the history — as a single cinematic, cohesive UI
-meant to replace point tools like LogExpert.
+**A zero-build, browser-native log analysis workbench for msg for automotive.**
+
+<br>
+
+![React](https://img.shields.io/badge/React-18.3.1-61DAFB?logo=react&logoColor=white)
+![Babel Standalone](https://img.shields.io/badge/Babel-Standalone-F9DC3E?logo=babel&logoColor=black)
+![Build](https://img.shields.io/badge/Build-None-A01441)
+![Server](https://img.shields.io/badge/Runs%20on-Python%20%7C%20Node%20%7C%20Any%20static%20server-139EAD)
+![Web Audio](https://img.shields.io/badge/Web%20Audio-Aura-5866E3)
+![Status](https://img.shields.io/badge/Status-Working%20Prototype-success)
+![Platform](https://img.shields.io/badge/Platform-Browser%20Only-6F6F6F)
+
+<br>
+
+<img src="https://readme-typing-svg.demolab.com?font=Fira+Code&size=15&duration=3000&pause=1200&color=56A3BC&center=true&vCenter=true&width=720&lines=Ingest+raw+logs.;Mine+recurring+failure+patterns.;Replace+LogExpert+with+a+cinematic+UI.;Keep+institutional+knowledge+where+engineers+can+find+it." alt="feature tagline" />
+
+</div>
+
+---
+
+## Overview
+
+Trace Miner ingests raw log files, mines them for recurring failure patterns
+using an in-browser TF-IDF + cosine-similarity engine, surfaces matches against
+a growing knowledge base of past incidents, and presents everything — the scan
+itself, the patterns, the reader, the history — as a single cinematic, cohesive
+UI meant to replace point tools like LogExpert.
 
 It is a **working interactive prototype**: no bundler, no transpile step, no
 server-side code. React + Babel-Standalone run the app in the browser; all
@@ -17,44 +38,85 @@ state is in-memory for the lifetime of the tab.
 
 ## Contents
 
-1. [Quick start](#quick-start)
-2. [What it does](#what-it-does)
-3. [Project layout](#project-layout)
-4. [Runtime architecture](#runtime-architecture)
-5. [Data model](#data-model)
-6. [The pattern engine](#the-pattern-engine)
-7. [Aura — log sonification & UI haptics](#aura--log-sonification--ui-haptics)
-8. [Tweaks panel](#tweaks-panel)
-9. [Pages, in order of the UI](#pages-in-order-of-the-ui)
+1.  [Quick start](#quick-start)
+2.  [What it does](#what-it-does)
+3.  [Project layout](#project-layout)
+4.  [Runtime architecture](#runtime-architecture)
+5.  [Data model](#data-model)
+6.  [The pattern engine](#the-pattern-engine)
+7.  [Aura — log sonification & UI haptics](#aura--log-sonification--ui-haptics)
+8.  [Tweaks panel](#tweaks-panel)
+9.  [Pages, in order of the UI](#pages-in-order-of-the-ui)
 10. [Design system](#design-system)
 11. [Extending the app](#extending-the-app)
 12. [Known constraints](#known-constraints)
+13. [Troubleshooting](#troubleshooting)
+14. [Provenance](#provenance)
 
 ---
 
 ## Quick start
 
-The app must be served over HTTP — opening `Trace Miner.html` directly via
-`file://` will fail because Babel-Standalone fetches the `<script type="text/babel">`
-sources, and browsers block `file://` fetches cross-origin.
+> **Why a server?** Opening `Trace Miner.html` directly via `file://` will fail.
+> Babel-Standalone fetches the `<script type="text/babel">` sources, and
+> browsers block `file://` fetches cross-origin. Any local HTTP server solves it.
 
-From the project root:
+Pick whichever runtime you already have — there's nothing to install for the
+app itself. No `npm install`, no build, no transpile.
+
+### Option 1 — Python (recommended, zero dependencies on Windows/macOS/Linux)
+
+Python ships with a built-in static file server. From the project root:
+
+```bash
+# Python 3 (most systems)
+python -m http.server 8080
+
+# If `python` isn't on PATH but `py` is (Windows)
+py -m http.server 8080
+
+# On some Linux distros where python3 is the entry point
+python3 -m http.server 8080
+```
+
+### Option 2 — Node.js (via `npx`, no install)
 
 ```bash
 npx http-server -p 8080
+# or
+npx serve -l 8080 .
 ```
 
-Then open:
+### Option 3 — Anything else that serves static files
+
+`caddy file-server --listen :8080`, an nginx `root` block, `php -S 127.0.0.1:8080`,
+VS Code's *Live Server* extension, etc. — they all work.
+
+### Then open
 
 ```
 http://127.0.0.1:8080/Trace%20Miner.html
 ```
 
-Any static server works (`python -m http.server`, `serve`, `caddy file-server`,
-an nginx `root`, etc.). No build step, no dependencies to install.
+First load runs a ~3.4 s cinematic boot sequence; after that the **Miner** page
+is the home. From here, click *Load sample bundle* and hit *Process logs* to
+see the full flow end-to-end without uploading anything.
 
-First load runs a ~3.4s cinematic boot sequence; after that the Miner page is
-the home.
+<details>
+<summary><b>One-liner shortcuts per platform</b></summary>
+
+```bash
+# Windows (PowerShell)
+py -m http.server 8080 ; Start-Process "http://127.0.0.1:8080/Trace%20Miner.html"
+
+# macOS
+python3 -m http.server 8080 & open "http://127.0.0.1:8080/Trace%20Miner.html"
+
+# Linux
+python3 -m http.server 8080 & xdg-open "http://127.0.0.1:8080/Trace%20Miner.html"
+```
+
+</details>
 
 ---
 
@@ -190,6 +252,26 @@ you snapshot changes out.
 ### The scan loop
 
 `App.processLogs()` drives the scan:
+
+```mermaid
+flowchart TD
+    A([Process logs click]) --> B[cueStart + startAmbience]
+    B --> C{For each file}
+    C --> D[For N steps ~ 5s total]
+    D --> E[setProcessing<br/>fileId · lineIdx · progress · narration]
+    E --> F[Aura.playForLevel<br/>throttled 55ms]
+    F --> G[sleep stepMs]
+    G --> D
+    D --> C
+    C -->|all files done| H[PatternEngine.analyze<br/>files, kb, 0.5]
+    H --> I[Merge into KB<br/>bump frequencies · append P-9xx]
+    I --> J[Append ScanSession to history]
+    J --> K[Toast top matches<br/>+ new patterns]
+    K --> L[cueComplete + stopAmbience]
+    L --> M([Results panel renders])
+```
+
+In pseudocode:
 
 ```
 for each file:
@@ -608,12 +690,87 @@ block.
 
 ---
 
+## Troubleshooting
+
+<details>
+<summary><b>The page is blank / scripts don't load.</b></summary>
+
+You probably opened `Trace Miner.html` via a `file://` path. Serve it over
+HTTP instead — see [Quick start](#quick-start). Open DevTools → Console and
+you should see a clear CORS or "failed to fetch" error confirming this.
+
+</details>
+
+<details>
+<summary><b><code>python -m http.server</code> says "Address already in use".</b></summary>
+
+Port `8080` is taken by another process. Either stop that process or pick a
+different port:
+
+```bash
+python -m http.server 5173
+# then open http://127.0.0.1:5173/Trace%20Miner.html
+```
+
+</details>
+
+<details>
+<summary><b>No audio on first click of the Aura button.</b></summary>
+
+Browsers only allow `AudioContext` to start after a user gesture. The first
+click *creates* the context; the second click onwards produces sound. This
+is a Chrome/Firefox autoplay-policy safeguard, not a bug in Aura.
+
+</details>
+
+<details>
+<summary><b>My log file loaded but no lines show in the time scrubber.</b></summary>
+
+The scrubber only considers lines whose timestamps match
+`YYYY-MM-DD[T ]HH:MM:SS[.ms][Z|±hh:mm]`. Lines with other timestamp formats
+still appear in the stream, but don't participate in the histogram or the
+range slider. Reformat the source log or extend the regex in
+`Dashboard.parseLogText` / `LogViewer.handleUpload`.
+
+</details>
+
+<details>
+<summary><b>A pattern I expect to match isn't matching.</b></summary>
+
+Matching is keyword-bounded. Open the pattern in the **Knowledge Base** page
+and check the `keywords` list — the match function does whole-token matching
+(with partial credit for multi-word keywords) and the score must clear `0.5`.
+Add a more distinctive keyword from a real matched line and re-scan.
+
+</details>
+
+<details>
+<summary><b>Changes I made to the KB disappeared.</b></summary>
+
+All state is in-memory. Use **Export knowledge_base.json** on the Knowledge
+Base page before refreshing. There is no import path yet — see
+[Extending the app](#extending-the-app) for wiring a real backend.
+
+</details>
+
+<details>
+<summary><b>Fonts look wrong / fall back to system sans.</b></summary>
+
+The bundled Aptos TTFs live in `ds/fonts/`. `ds/colors_and_type.css` tries
+`local('Aptos')` first, then the bundled files. If you moved `ds/` or served
+from a different root, the relative `url(...)` paths in that CSS will 404 —
+keep `ds/` a sibling of `Trace Miner.html`.
+
+</details>
+
+---
+
 ## Provenance
 
 This implementation was handed off from a Claude Design session
 (claude.ai/design). The original design bundle (`uoOuLuHZLGP3Jd_a_vcpSw`)
-contained the prototype in `HTML/CSS/JS`; this copy at
-`C:\Personal_Projects\trace-miner\` was produced by reading the README and
-chat transcripts, reading every file in full, and materialising the complete
-project, with one font-path fix in `ds/colors_and_type.css` so the bundled
-Aptos TTFs resolve correctly from inside the CSS file.
+contained the prototype in `HTML/CSS/JS`; this working copy was produced by
+reading the README and chat transcripts, reading every file in full, and
+materialising the complete project, with one font-path fix in
+`ds/colors_and_type.css` so the bundled Aptos TTFs resolve correctly from
+inside the CSS file.
