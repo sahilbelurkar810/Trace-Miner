@@ -1948,3 +1948,154 @@ main > * {
   .up-body-grid { grid-template-columns: 1fr; }
   .up-head-right { gap: 12px; }
 }
+
+
+/* ======================== AURA TOGGLE BUTTON ========================= */
+.aura-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: transparent; border: 1px solid var(--border-hair);
+  padding: 5px 10px; cursor: pointer;
+  font-family: var(--font-display); font-size: 11px; font-weight: 700;
+  letter-spacing: 0.12em; text-transform: uppercase; color: var(--fg-2);
+  position: relative;
+  transition: all 180ms;
+}
+.aura-btn:hover { border-color: var(--accent); color: var(--accent); }
+.aura-btn.on {
+  background: var(--accent); border-color: var(--accent); color: #fff;
+}
+.aura-btn.on:hover { color: #fff; }
+.aura-pulse {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: #fff; box-shadow: 0 0 6px #fff;
+  animation: auraPulse 1.3s ease-in-out infinite;
+}
+@keyframes auraPulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50%      { transform: scale(1.4); opacity: 0.5; }
+}
+
+
+
+/* ======================== TIME-TRAVEL SCRUBBER ========================= */
+.lv-line.dimmed {
+  opacity: 0.18;
+  transition: opacity 180ms ease;
+}
+.lv-line.dimmed .lv-lvl { opacity: 0.5; }
+.lv-line:not(.dimmed) {
+  transition: opacity 180ms ease;
+}
+
+.lv-scrubber {
+  border-top: 1px solid var(--border-hair);
+  background: linear-gradient(180deg, #fafbfc 0%, #f4f5f7 100%);
+  padding: 10px 16px 12px;
+  font-family: var(--font-display);
+  flex-shrink: 0;
+}
+
+.scrub-head {
+  display: flex; align-items: center; gap: 14px;
+  margin-bottom: 8px;
+}
+.scrub-label {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 10px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.14em;
+  color: var(--fg-2);
+}
+.scrub-label svg { color: var(--accent); }
+.scrub-window {
+  display: flex; align-items: center; gap: 8px;
+  font-family: var(--mono); font-size: 11px;
+  color: var(--fg-1);
+  margin-left: auto;
+}
+.scrub-window .sw-t {
+  background: #fff; border: 1px solid var(--border-hair);
+  padding: 2px 7px; font-weight: 700;
+}
+.scrub-window .sw-arr { color: var(--accent); font-weight: 700; }
+.scrub-window .sw-count { color: var(--fg-3); font-size: 10px; }
+.scrub-reset {
+  background: #fff; border: 1px solid var(--border-hair);
+  padding: 3px 10px; font-size: 10px; font-weight: 700;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--accent); cursor: pointer;
+  font-family: var(--font-display);
+}
+.scrub-reset:hover { border-color: var(--accent); background: var(--accent); color: #fff; }
+
+.scrub-track {
+  position: relative;
+  height: 48px;
+  background: #fff;
+  border: 1px solid var(--border-hair);
+  user-select: none;
+  cursor: default;
+}
+.scrub-histo {
+  position: absolute; inset: 0;
+  display: flex; align-items: flex-end;
+  padding: 4px 2px 0;
+  gap: 1px;
+  pointer-events: none;
+}
+.scrub-bar {
+  flex: 1;
+  position: relative;
+  display: flex; flex-direction: column-reverse;
+  min-height: 1px;
+}
+.scrub-bar .bar { width: 100%; }
+.scrub-bar .bar.err  { background: var(--accent); }
+.scrub-bar .bar.warn { background: #F5B510; }
+.scrub-bar .bar.info { background: rgba(100,116,139,0.4); }
+
+.scrub-mask {
+  position: absolute; top: 0; bottom: 0;
+  background: rgba(255,255,255,0.72);
+  backdrop-filter: grayscale(1);
+  pointer-events: none;
+  transition: width 60ms linear;
+}
+.scrub-mask.left { left: 0; border-right: 1px solid rgba(160,20,65,0.2); }
+.scrub-mask.right { right: 0; border-left: 1px solid rgba(160,20,65,0.2); }
+
+.scrub-range {
+  position: absolute; top: 0; bottom: 0;
+  background: rgba(160,20,65,0.06);
+  border-top: 2px solid var(--accent);
+  border-bottom: 1px solid rgba(160,20,65,0.3);
+  cursor: grab;
+  transition: background 120ms;
+}
+.scrub-range:hover { background: rgba(160,20,65,0.1); }
+.scrub-range:active { cursor: grabbing; }
+
+.scrub-handle {
+  position: absolute; top: -4px; bottom: -4px;
+  width: 12px;
+  margin-left: -6px;
+  background: var(--accent);
+  cursor: ew-resize;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 2px 8px rgba(160,20,65,0.35);
+  z-index: 2;
+  transition: background 120ms, transform 120ms;
+}
+.scrub-handle:hover { background: var(--accent-dark, #7a0f3e); transform: scaleX(1.15); }
+.scrub-handle .hdl-grip {
+  width: 2px; height: 18px;
+  background: rgba(255,255,255,0.6);
+  box-shadow: 3px 0 0 rgba(255,255,255,0.6), -3px 0 0 rgba(255,255,255,0.6);
+}
+
+.scrub-axis {
+  display: flex; justify-content: space-between;
+  margin-top: 4px;
+  font-family: var(--mono); font-size: 9px;
+  color: var(--fg-3);
+  letter-spacing: 0.04em;
+}

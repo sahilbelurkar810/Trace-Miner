@@ -9,6 +9,7 @@ function LogViewer({ files, kb, onOpenPattern, onAddFiles }) {
   const [selected, setSelected] = React.useState(null);
   const [bookmarks, setBookmarks] = React.useState({}); // {fileId: Set(lineIdx)}
   const [tail, setTail] = React.useState(false);
+  const [timeWindow, setTimeWindow] = React.useState(null); // [startIdx, endIdx] for active file
   const streamRef = React.useRef(null);
 
   React.useEffect(() => {
@@ -16,6 +17,25 @@ function LogViewer({ files, kb, onOpenPattern, onAddFiles }) {
   }, [files]);
 
   const active = files.find(f => f.id === activeId);
+
+  // Parse timestamps into numeric indices for time-travel
+  const timeIndex = React.useMemo(() => {
+    if (!active) return { stamps: [], hasTime: false, min: 0, max: 0 };
+    const stamps = active.lines.map((ln, i) => {
+      if (!ln.ts) return null;
+      const t = new Date(ln.ts.replace(' ', 'T'));
+      return isNaN(t) ? null : t.getTime();
+    });
+    const valid = stamps.filter(x => x != null);
+    if (valid.length < 2) return { stamps, hasTime: false, min: 0, max: 0 };
+    return { stamps, hasTime: true, min: Math.min(...valid), max: Math.max(...valid) };
+  }, [active]);
+
+  // Reset time window when file changes
+  React.useEffect(() => {
+    if (timeIndex.hasTime) setTimeWindow([timeIndex.min, timeIndex.max]);
+    else setTimeWindow(null);
+  }, [activeId, timeIndex.hasTime, timeIndex.min, timeIndex.max]);
 
   // compute pattern matches across all files
   const matches = React.useMemo(() => {
@@ -28,7 +48,14 @@ function LogViewer({ files, kb, onOpenPattern, onAddFiles }) {
     return { lineToPattern: map, count: Object.keys(map).length };
   }, [active, kb]);
 
-  // filtered line indices
+  // filtered line indices + in/out of time window
+  const inTimeWindow = React.useCallback((idx) => {
+    if (!timeWindow || !timeIndex.hasTime) return true;
+    const t = timeIndex.stamps[idx];
+    if (t == null) return true; // lines without timestamps always show
+    return t >= timeWindow[0] && t <= timeWindow[1];
+  }, [timeWindow, timeIndex]);
+
   const filtered = React.useMemo(() => {
     if (!active) return [];
     const q = query.trim().toLowerCase();
@@ -54,6 +81,23 @@ function LogViewer({ files, kb, onOpenPattern, onAddFiles }) {
       streamRef.current.scrollTop = streamRef.current.scrollHeight;
     }
   }, [tail, filtered.length, activeId]);
+
+  // Auto-scroll: when the time window moves, scroll to the first in-window line
+  React.useEffect(() => {
+    if (!timeWindow || !timeIndex.hasTime || !streamRef.current || tail) return;
+    // find first filtered idx whose timestamp is in-window
+    const firstInWindow = filtered.find(i => {
+      const t = timeIndex.stamps[i];
+      return t == null || (t >= timeWindow[0] && t <= timeWindow[1]);
+    });
+    if (firstInWindow == null) return;
+    const el = streamRef.current.querySelector(`[data-lv-idx="${firstInWindow}"]`);
+    if (!el) return;
+    const sRect = streamRef.current.getBoundingClientRect();
+    const eRect = el.getBoundingClientRect();
+    const delta = eRect.top - sRect.top - 12;
+    streamRef.current.scrollBy({ top: delta, behavior: 'smooth' });
+  }, [timeWindow && timeWindow[0], timeWindow && timeWindow[1]]);
 
   const toggleBookmark = (idx) => {
     setBookmarks(prev => {
@@ -183,7 +227,7 @@ function LogViewer({ files, kb, onOpenPattern, onAddFiles }) {
             const pat = matches.lineToPattern[idx];
             const bm = (bookmarks[activeId]||new Set()).has(idx);
             return (
-              <div key={idx} className={"lv-line" + (selected===idx?' selected':'') + (bm?' bookmarked':'') + (pat?' matched-pattern':'')} onClick={() => setSelected(idx)}>
+              <div key={idx} data-lv-idx={idx} className={"lv-line" + (selected===idx?' selected':'') + (bm?' bookmarked':'') + (pat?' matched-pattern':'') + (!inTimeWindow(idx)?' dimmed':'')} onClick={() => setSelected(idx)}>
                 <span className="lv-bookmark" onClick={e => { e.stopPropagation(); toggleBookmark(idx); }}>★</span>
                 <span className="lv-ln">{String(idx+1).padStart(4,'0')}</span>
                 <span className="lv-ts">{(line.ts||'').slice(11,19) || '—'}</span>
@@ -196,6 +240,13 @@ function LogViewer({ files, kb, onOpenPattern, onAddFiles }) {
             <div style={{padding: 40, textAlign:'center', color:'var(--fg-3)', fontSize: 13}}>No lines match the current filter.</div>
           )}
         </div>
+
+        {timeIndex.hasTime && timeWindow && <TimeScrubber
+          timeIndex={timeIndex}
+          value={timeWindow}
+          onChange={setTimeWindow}
+          lines={active.lines}
+        />}
       </div>
 
       <div className="lv-details">
@@ -249,4 +300,154 @@ function LogViewer({ files, kb, onOpenPattern, onAddFiles }) {
 window.FileTypeIcon = function FileTypeIcon({ type }) {
   return <div className={`fi-type ${type||'unknown'}`}>{(type||'??').slice(0,3).toUpperCase()}</div>;
 };
+
+// ── Time-travel scrubber ──────────────────────────────────────────────
+// Dual-range slider across the log's time span, with a density histogram
+// of events (error/warn/info) behind. Dragging either handle dims lines
+// outside the window in the main stream.
+function TimeScrubber({ timeIndex, value, onChange, lines }) {
+  const { min, max, stamps } = timeIndex;
+  const span = max - min || 1;
+  const [dragging, setDragging] = React.useState(null); // 'lo' | 'hi' | 'range' | null
+  const trackRef = React.useRef(null);
+  const dragStateRef = React.useRef(null);
+
+  const pct = (t) => ((t - min) / span) * 100;
+  const fromPct = (p) => min + (p / 100) * span;
+
+  // Histogram: 40 buckets, count per severity
+  const buckets = React.useMemo(() => {
+    const N = 40;
+    const arr = Array.from({length: N}, () => ({err: 0, warn: 0, info: 0}));
+    stamps.forEach((t, i) => {
+      if (t == null) return;
+      const b = Math.min(N-1, Math.floor(((t - min) / span) * N));
+      const lvl = lines[i].level;
+      if (lvl === 'ERROR' || lvl === 'FATAL') arr[b].err++;
+      else if (lvl === 'WARN') arr[b].warn++;
+      else arr[b].info++;
+    });
+    const maxBucket = Math.max(1, ...arr.map(b => b.err + b.warn + b.info));
+    return { arr, maxBucket };
+  }, [stamps, lines, min, span]);
+
+  const pctFromEvent = (e) => {
+    const rect = trackRef.current.getBoundingClientRect();
+    const x = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
+    return Math.max(0, Math.min(100, (x / rect.width) * 100));
+  };
+
+  const onHandleDown = (which) => (e) => {
+    e.preventDefault(); e.stopPropagation();
+    setDragging(which);
+  };
+
+  const onRangeDown = (e) => {
+    e.preventDefault();
+    const p = pctFromEvent(e);
+    const loP = pct(value[0]); const hiP = pct(value[1]);
+    dragStateRef.current = { startP: p, loP, hiP };
+    setDragging('range');
+  };
+
+  React.useEffect(() => {
+    if (!dragging) return;
+    const onMove = (e) => {
+      const p = pctFromEvent(e);
+      window.Aura && window.Aura.uiDrag && window.Aura.uiDrag();
+      if (dragging === 'lo') {
+        const t = fromPct(p);
+        onChange([Math.min(t, value[1] - span*0.01), value[1]]);
+      } else if (dragging === 'hi') {
+        const t = fromPct(p);
+        onChange([value[0], Math.max(t, value[0] + span*0.01)]);
+      } else if (dragging === 'range') {
+        const st = dragStateRef.current;
+        const delta = p - st.startP;
+        let newLo = st.loP + delta, newHi = st.hiP + delta;
+        if (newLo < 0) { newHi -= newLo; newLo = 0; }
+        if (newHi > 100) { newLo -= (newHi - 100); newHi = 100; }
+        onChange([fromPct(newLo), fromPct(newHi)]);
+      }
+    };
+    const onUp = () => setDragging(null);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    window.addEventListener('touchmove', onMove);
+    window.addEventListener('touchend', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      window.removeEventListener('touchmove', onMove);
+      window.removeEventListener('touchend', onUp);
+    };
+  }, [dragging, value, onChange, span]);
+
+  const fmt = (t) => {
+    const d = new Date(t);
+    const pad = n => String(n).padStart(2,'0');
+    return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  };
+  const fmtDate = (t) => {
+    const d = new Date(t);
+    const pad = n => String(n).padStart(2,'0');
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${fmt(t)}`;
+  };
+  const loP = pct(value[0]); const hiP = pct(value[1]);
+  const windowedCount = stamps.filter(t => t != null && t >= value[0] && t <= value[1]).length;
+  const totalTimestamped = stamps.filter(t => t != null).length;
+  const isFull = loP < 0.5 && hiP > 99.5;
+
+  return (
+    <div className="lv-scrubber">
+      <div className="scrub-head">
+        <div className="scrub-label">
+          <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="8" cy="8" r="6.5"/><path d="M8 4v4l2.5 2.5" strokeLinecap="round"/></svg>
+          <span>Time travel</span>
+        </div>
+        <div className="scrub-window">
+          <span className="sw-t">{fmt(value[0])}</span>
+          <span className="sw-arr">→</span>
+          <span className="sw-t">{fmt(value[1])}</span>
+          <span className="sw-count">· {windowedCount}/{totalTimestamped} lines</span>
+        </div>
+        {!isFull && (
+          <button className="scrub-reset" onClick={() => onChange([min, max])}>Reset</button>
+        )}
+      </div>
+      <div className="scrub-track" ref={trackRef}>
+        <div className="scrub-histo">
+          {buckets.arr.map((b, i) => {
+            const total = b.err + b.warn + b.info;
+            const h = total / buckets.maxBucket * 100;
+            return (
+              <div key={i} className="scrub-bar" style={{height: h + '%'}}>
+                {b.err > 0 && <div className="bar err" style={{height: (b.err/total*100)+'%'}}/>}
+                {b.warn > 0 && <div className="bar warn" style={{height: (b.warn/total*100)+'%'}}/>}
+                {b.info > 0 && <div className="bar info" style={{height: (b.info/total*100)+'%'}}/>}
+              </div>
+            );
+          })}
+        </div>
+        <div className="scrub-mask left" style={{width: loP + '%'}}/>
+        <div className="scrub-mask right" style={{width: (100 - hiP) + '%'}}/>
+        <div className="scrub-range" style={{left: loP + '%', width: (hiP - loP) + '%'}} onMouseDown={onRangeDown} onTouchStart={onRangeDown}/>
+        <div className="scrub-handle lo" style={{left: loP + '%'}} onMouseDown={onHandleDown('lo')} onTouchStart={onHandleDown('lo')} title={fmtDate(value[0])}>
+          <span className="hdl-grip"/>
+        </div>
+        <div className="scrub-handle hi" style={{left: hiP + '%'}} onMouseDown={onHandleDown('hi')} onTouchStart={onHandleDown('hi')} title={fmtDate(value[1])}>
+          <span className="hdl-grip"/>
+        </div>
+      </div>
+      <div className="scrub-axis">
+        <span>{fmt(min)}</span>
+        <span>{fmt(min + span*0.25)}</span>
+        <span>{fmt(min + span*0.5)}</span>
+        <span>{fmt(min + span*0.75)}</span>
+        <span>{fmt(max)}</span>
+      </div>
+    </div>
+  );
+}
+
 window.LogViewer = LogViewer;

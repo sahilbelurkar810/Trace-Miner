@@ -12,7 +12,17 @@
       "Bash(curl -s -o /dev/null -w \"HTTP %{http_code} · %{size_download} bytes\\\\n\" \"http://localhost:5173/Trace%20Miner.html\")",
       "Bash(curl -s -o /dev/null -w \"components/App.jsx: HTTP %{http_code}\\\\n\" \"http://localhost:5173/components/App.jsx\")",
       "Bash(curl -s -o /dev/null -w \"data/sample-logs.js: HTTP %{http_code}\\\\n\" \"http://localhost:5173/data/sample-logs.js\")",
-      "Bash(kill 1036)"
+      "Bash(kill 1036)",
+      "Bash(mkdir -p /tmp/design-extract)",
+      "Bash(cp \"/c/Users/anants/.claude/projects/C--Users-anants-Trace-Miner/26bc7a79-dfcc-4396-a027-63eae7694622/tool-results/webfetch-1777022407845-kwj53l.bin\" ./archive.gz)",
+      "Bash(gunzip -f archive.gz)",
+      "Bash(tar -xf archive)",
+      "Bash(rm archive *)",
+      "Bash(cp \"/tmp/design-extract/trace-miner/project/Trace Miner.html\" \"/c/Users/anants/Trace-Miner/Trace Miner.html\")",
+      "Bash(cp /tmp/design-extract/trace-miner/project/data/aura.js /c/Users/anants/Trace-Miner/data/aura.js)",
+      "Bash(cp /tmp/design-extract/trace-miner/project/components/App.jsx /c/Users/anants/Trace-Miner/components/App.jsx)",
+      "Bash(cp /tmp/design-extract/trace-miner/project/components/Dashboard.jsx /c/Users/anants/Trace-Miner/components/Dashboard.jsx)",
+      "Bash(cp /tmp/design-extract/trace-miner/project/components/LogViewer.jsx /c/Users/anants/Trace-Miner/components/LogViewer.jsx)"
     ]
   }
 }

@@ -1,7 +1,8 @@
 // Main App — boot → miner / viewer / kb / history / detail
 const DEFAULTS = /*EDITMODE-BEGIN*/{
   "accentColor": "red",
-  "logDensity": "realistic"
+  "logDensity": "realistic",
+  "audioEnabled": false
 }/*EDITMODE-END*/;
 
 const ACCENTS = {
@@ -32,6 +33,11 @@ function App() {
     document.documentElement.style.setProperty('--accent-dark', a.dark);
   }, [tweakState.accentColor]);
 
+  // Aura audio sync
+  React.useEffect(() => {
+    if (window.Aura) window.Aura.setEnabled(!!tweakState.audioEnabled);
+  }, [tweakState.audioEnabled]);
+
   const pushToast = (t) => {
     const id = Math.random().toString(36).slice(2);
     setToasts(ts => [...ts, { id, ...t }]);
@@ -50,6 +56,7 @@ function App() {
   const processLogs = async () => {
     if (files.length === 0) return;
     setResults(null);
+    if (window.Aura) { window.Aura.cueStart(); window.Aura.startAmbience(); }
     const totalMs = 5000;
     const perFileMs = totalMs / files.length;
     const totalKnownPatterns = Object.values(kb).reduce((s,b) => s + b.patterns.length, 0);
@@ -74,6 +81,7 @@ function App() {
           narration: narrations[Math.min(narrations.length-1, Math.floor(s/2))],
           totalKnownPatterns,
         });
+        if (window.Aura) window.Aura.playForLevel(f.lines[idx]?.level);
         await new Promise(r => setTimeout(r, perFileMs/steps));
       }
     }
@@ -110,11 +118,13 @@ function App() {
 
     out.aggregated.slice(0,2).forEach(a => {
       pushToast({ title: 'Pattern matched', body: `${a.pattern.id} · ${a.pattern.title.slice(0,50)}${a.pattern.title.length>50?'…':''}` });
+      if (window.Aura) window.Aura.cueMatch();
     });
     out.newPatterns.slice(0,2).forEach(p => {
       pushToast({ title: 'New pattern discovered', body: `${p.id} · logged to unknown_logs` });
     });
 
+    if (window.Aura) { window.Aura.stopAmbience(); window.Aura.cueComplete(); }
     setProcessing(null);
   };
 
@@ -172,6 +182,32 @@ function App() {
             </nav>
           </div>
           <div className="topbar-right">
+            <button className={"aura-btn" + (tweakState.audioEnabled ? ' on' : '')}
+              onClick={() => {
+                const next = !tweakState.audioEnabled;
+                setTweakState('audioEnabled', next);
+                if (next && window.Aura) { window.Aura.setEnabled(true); window.Aura.cueStart(); }
+                if (!next && window.Aura) { window.Aura.setEnabled(false); window.Aura.stopAmbience(); }
+              }}
+              title={tweakState.audioEnabled ? 'Aura: sonification on' : 'Aura: sonification off'}>
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                {tweakState.audioEnabled ? (
+                  <>
+                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                    <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+                    <path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
+                  </>
+                ) : (
+                  <>
+                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                    <line x1="23" y1="9" x2="17" y2="15"/>
+                    <line x1="17" y1="9" x2="23" y2="15"/>
+                  </>
+                )}
+              </svg>
+              <span>Aura</span>
+              {tweakState.audioEnabled && <span className="aura-pulse"/>}
+            </button>
             <span><span className="status-dot"/>Engine online</span>
             <span style={{fontFamily:'var(--mono)'}}>v1.0.0</span>
           </div>
@@ -226,13 +262,13 @@ function App() {
         <window.TweaksPanel title="Tweaks">
           <window.TweakSection title="Appearance">
             <window.TweakRadio label="Accent color" value={tweakState.accentColor}
-              onChange={v => setTweakState({accentColor: v})}
+              onChange={v => setTweakState('accentColor', v)}
               options={[{value:'red', label:'msg red'},{value:'teal', label:'Teal'},{value:'blue', label:'Blue'}]}/>
           </window.TweakSection>
           <window.TweakSection title="Sample data">
             <window.TweakRadio label="Log density" value={tweakState.logDensity}
               onChange={v => {
-                setTweakState({logDensity: v});
+                setTweakState('logDensity', v);
                 const mult = v === 'sparse' ? 0.5 : v === 'heavy' ? 1.8 : 1;
                 setFiles(prev => prev.map(f => {
                   const base = (window.SAMPLE_LOGS.find(s => s.name === f.name)?.lines) || f.lines;
@@ -246,6 +282,20 @@ function App() {
                 }));
               }}
               options={[{value:'sparse', label:'Sparse'},{value:'realistic', label:'Realistic'},{value:'heavy', label:'Heavy'}]}/>
+          </window.TweakSection>
+          <window.TweakSection title="Audio">
+            <window.TweakToggle label="Log sonification" value={!!tweakState.audioEnabled}
+              onChange={v => {
+                setTweakState('audioEnabled', v);
+                if (window.Aura) {
+                  window.Aura.setEnabled(v);
+                  if (v) window.Aura.cueStart();
+                  else window.Aura.stopAmbience();
+                }
+              }}/>
+            <div style={{fontSize:11, color:'var(--fg-3)', marginTop:6, lineHeight:1.5}}>
+              Plays subtle synth blips per log level while scanning. Web Audio — no downloads.
+            </div>
           </window.TweakSection>
         </window.TweaksPanel>
       )}
