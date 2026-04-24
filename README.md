@@ -38,20 +38,85 @@ state is in-memory for the lifetime of the tab.
 
 ## Contents
 
-1.  [Quick start](#quick-start)
-2.  [What it does](#what-it-does)
-3.  [Project layout](#project-layout)
-4.  [Runtime architecture](#runtime-architecture)
-5.  [Data model](#data-model)
-6.  [The pattern engine](#the-pattern-engine)
-7.  [Aura — log sonification & UI haptics](#aura--log-sonification--ui-haptics)
-8.  [Tweaks panel](#tweaks-panel)
-9.  [Pages, in order of the UI](#pages-in-order-of-the-ui)
-10. [Design system](#design-system)
-11. [Extending the app](#extending-the-app)
-12. [Known constraints](#known-constraints)
-13. [Troubleshooting](#troubleshooting)
-14. [Provenance](#provenance)
+1.  [Screenshots](#screenshots)
+2.  [Quick start](#quick-start)
+3.  [What it does](#what-it-does)
+4.  [Project layout](#project-layout)
+5.  [Runtime architecture](#runtime-architecture)
+6.  [Data model](#data-model)
+7.  [The pattern engine](#the-pattern-engine)
+8.  [Aura — log sonification & UI haptics](#aura--log-sonification--ui-haptics)
+9.  [Tweaks panel](#tweaks-panel)
+10. [Pages, in order of the UI](#pages-in-order-of-the-ui)
+11. [Design system](#design-system)
+12. [Extending the app](#extending-the-app)
+13. [Known constraints](#known-constraints)
+14. [Troubleshooting](#troubleshooting)
+15. [Provenance](#provenance)
+
+---
+
+## Screenshots
+
+A tour of the UI in the order a user typically hits each page. All captures
+are against the bundled sample data so you can reproduce every view locally
+via *Load sample bundle* → *Process logs*.
+
+### Miner — empty state
+
+<p align="center">
+  <img src="MINER.png" alt="Miner page with no logs loaded" />
+  <br/>
+  <em>The landing view after boot. Left: ingestion panel with dropzone and <b>Load sample bundle</b>. Middle: live-scan area (empty). Right: Detected patterns findings panel (empty). The top bar exposes the five nav routes and the <b>AURA</b> audio-engine toggle.</em>
+</p>
+
+### Miner — after loading the sample bundle
+
+<p align="center">
+  <img src="Miner-uploaded.png" alt="Miner page after loading the three-file sample bundle" />
+  <br/>
+  <em>Three sample files (<code>realistic-api.log</code>, <code>realistic-auth.log</code>, <code>realistic-server.log</code>) tabbed across the scanner. Each parsed line shows its timestamp and level pill; the <b>Process logs</b> CTA is now armed.</em>
+</p>
+
+### Processing — ScanSplash overlay
+
+<p align="center">
+  <img src="Proceesing.png" alt="Fullscreen processing overlay with progress ring and cycling system narration" />
+  <br/>
+  <em>The fullscreen glassmorphic overlay that covers the viewport while <code>App.processLogs</code> runs. The progress ring shows aggregate completion across all files; the cycling narration (Parsing → Tokenising → Clustering → Matching → Computing → Finalizing) tracks the current stage. Four-stat bar: file index, line index, matches so far, current stage.</em>
+</p>
+
+### Log Viewer — full reader with time-travel scrubber
+
+<p align="center">
+  <img src="Log%20Viewer.png" alt="Full log reader with file sidebar, filter chips, line stream, and time-travel scrubber" />
+  <br/>
+  <em>The LogExpert replacement. Left: open files. Middle: search toolbar, ERROR / WARN / INFO level chips, the line stream with per-line level pills, and the <b>Time travel</b> dual-range scrubber backed by a 40-bucket ERROR/WARN/INFO density histogram. Right: selected-line inspector with the full raw message and the matched KB pattern if any.</em>
+</p>
+
+### Pattern detail — matched excerpt, suggested fix, applied-fix editor
+
+<p align="center">
+  <img src="Knowledge%20Base.png" alt="Pattern detail page for P-002 with matched excerpt, suggested fix, applied-fix form, and human-intervention runbook" />
+  <br/>
+  <em>Drill-down for a single pattern (here <code>P-002 · API · Auth-service upstream timeout → circuit breaker open</code>). The matched log excerpt renders in a dark terminal block; below it sit the historical <b>Suggested fix</b>, the editable <b>Applied fix</b> block (writes back to the in-memory KB), and the <b>Human intervention</b> runbook. Aside: confidence donut, keyword chips, 6-week frequency timeline, and first/last-seen dates.</em>
+</p>
+
+### Uploads — active files with error-density sparklines
+
+<p align="center">
+  <img src="Upload-History.png" alt="Uploads page with six-stat header and per-file rows showing error percentages and sparkline timelines" />
+  <br/>
+  <em>Audit of every file currently loaded. 6-stat header (files / lines / errors / warnings / pattern hits / total size) over two sub-tabs: <b>Active files</b> (shown) with per-file type badge, line and size counts, error %, 20-bucket error-density sparkline, and match count; and <b>Scan sessions</b> for past runs. Filter by filename, sort by name / lines / error % / matches.</em>
+</p>
+
+### History — every pattern, sortable and filterable
+
+<p align="center">
+  <img src="History.png" alt="Detection history table with category pills, sortable columns, and fix-status badges" />
+  <br/>
+  <em>Institutional memory: every pattern ever observed across every scan. 4-stat header (patterns tracked, total occurrences, with applied fix, scan sessions). Filter by search + category. Each row shows <code>P-xxx</code>, description, frequency bar, last-seen date, source files, and an <b>APPLIED</b> / <b>OPEN</b> fix-status pill. Bottom strip: recent scan sessions.</em>
+</p>
 
 ---
 
