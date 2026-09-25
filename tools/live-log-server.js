@@ -44,11 +44,28 @@ const KNOWN = [
   ['ERROR', 'pod auth-service-6c9 OOMKilled (limit 512Mi, usage 519Mi)'],
 ];
 
-const NOVEL = [
-  ['ERROR', 'ledger-service grpc DeadlineExceeded calling balance-service after 3000ms'],
-  ['ERROR', 'checkout-service payment webhook signature mismatch, dropping event evt_8231'],
-  ['FATAL', 'panic: index out of range [12] with length 8 at pricing/tax.go:88'],
+// `mineNewPatterns` (data/pattern-engine.js) signs each freshly-mined pattern
+// by a line's first 3 content-word tokens, then folds that signature's
+// keywords back into the KB — so any later line with the *same* leading
+// tokens legitimately matches the pattern it just created instead of being
+// re-mined. A fixed handful of NOVEL lines therefore has a hard, fast ceiling
+// on how many new patterns can ever appear (one per distinct template, once).
+// To keep live demos interesting for longer, build NOVEL as every
+// service x template combination — the service name is always among a
+// line's first 3 tokens, so each pairing is its own distinct signature.
+const NOVEL_SERVICES = [
+  'ledger-service', 'checkout-service', 'pricing-service', 'inventory-service',
+  'shipping-service', 'notification-service', 'fraud-service', 'loyalty-service',
+  'refund-service', 'tax-service',
 ];
+const NOVEL_TEMPLATES = [
+  (svc) => ['ERROR', `${svc} grpc DeadlineExceeded calling balance-service after 3000ms`],
+  (svc) => ['ERROR', `${svc} payment webhook signature mismatch, dropping event evt_${1000 + Math.floor(Math.random() * 9000)}`],
+  (svc) => ['FATAL', `${svc}: panic, index out of range [12] with length 8 at handler.go:88`],
+  (svc) => ['ERROR', `${svc} redis SETEX failed: connection reset by peer`],
+  (svc) => ['ERROR', `${svc} kafka consumer group rebalance stalled for 45s`],
+];
+const NOVEL = NOVEL_SERVICES.flatMap(svc => NOVEL_TEMPLATES.map(t => t(svc)));
 
 let seq = 0;
 function nextLine() {

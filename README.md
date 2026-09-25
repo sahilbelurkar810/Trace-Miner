@@ -586,8 +586,12 @@ A weighted mix, defined in `tools/live-log-server.js`:
   seeded KB (`connection pool at capacity`, `auth-service` timeouts/circuit
   breaker, `OOMKilled`), so live matching lights up convincingly.
 - **~10% novel lines** — distinctive, never-seeded error signatures (a gRPC
-  deadline, a webhook signature mismatch, a nil-pointer panic) designed to
-  surface as new-pattern candidates live.
+  deadline, a webhook signature mismatch, an index-out-of-range panic, a
+  Redis reset, a stalled Kafka rebalance) designed to surface as new-pattern
+  candidates live. Built as every `NOVEL_SERVICES` × `NOVEL_TEMPLATES`
+  combination (10 services × 5 templates = 50 distinct lines), since the
+  service name always lands in a line's signature — see the rough-edges note
+  below for why a bigger combinatorial pool matters more than it might seem.
 
 ### How the app consumes it (`App.jsx`)
 
@@ -622,7 +626,15 @@ A weighted mix, defined in `tools/live-log-server.js`:
   existing pattern engine, not something added for live mode. In practice
   this self-corrects: once a signature is added to the KB, later occurrences
   match it instead of re-mining, so duplicates taper off within a cycle or
-  two rather than accumulating indefinitely.
+  two rather than accumulating indefinitely. The flip side of this: a
+  *small, fixed* novel-line pool hits a hard ceiling on new-pattern
+  discovery almost immediately, since `mineNewPatterns` signs a pattern by a
+  line's first 3 content-word tokens — once each distinct signature is
+  mined once, every later occurrence legitimately matches the pattern it
+  just created. That's why the generator builds `NOVEL` combinatorially
+  (service × template) instead of listing a handful of lines directly — more
+  distinct signatures means new-pattern discovery keeps happening for longer
+  before the (still finite, still accepted-as-a-rough-edge) pool runs out.
 - No reconnect/backoff UI beyond what `EventSource` already does natively
   (it retries on its own; the app just reflects last-known status rather
   than tearing the connection down on a transient blip).
