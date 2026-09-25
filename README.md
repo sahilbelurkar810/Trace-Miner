@@ -26,9 +26,10 @@ state is in-memory for the lifetime of the tab.
 7. [Aura — log sonification & UI haptics](#aura--log-sonification--ui-haptics)
 8. [Tweaks panel](#tweaks-panel)
 9. [Pages, in order of the UI](#pages-in-order-of-the-ui)
-10. [Design system](#design-system)
-11. [Extending the app](#extending-the-app)
-12. [Known constraints](#known-constraints)
+10. [Live feed (streaming)](#live-feed-streaming)
+11. [Design system](#design-system)
+12. [Extending the app](#extending-the-app)
+13. [Known constraints](#known-constraints)
 
 ---
 
@@ -95,22 +96,33 @@ trace-miner/
   README.md                     this file
 
   components/
-    App.jsx                     root component — routing, toast bus, KB state
+    App.jsx                     root component — routing, toast bus, KB state,
+                                and the shared log-reading state (bookmarks,
+                                reader prefs, selection, time windows)
     BootScene.jsx               typewriter boot sequence
-    Dashboard.jsx               Miner page — UploadPanel, Scanner, ResultsPanel,
-                                plus the glassmorphic ScanSplash overlay
-    LogViewer.jsx               full-featured log reader + TimeScrubber
+    LogStream.jsx               shared reader used by both Dashboard's Scanner
+                                and LogViewer — toolbar, line rendering,
+                                TimeScrubber, FileTypeIcon, highlightText
+    Dashboard.jsx               Miner page — UploadPanel, Scanner (renders
+                                LogStream), ResultsPanel, ScanSplash overlay
+    LogViewer.jsx               file sidebar + LogStream (detailsMode="pane")
+    LivePage.jsx                connect/disconnect controls + LogStream
+                                (detailsMode="pane") for the SSE live feed
     Pages.jsx                   PatternDetail, KnowledgeBase, History
     Uploads.jsx                 per-file drill-down + scan-session list
-    Robot.jsx                   SVG robot (retained in bundle, not wired into
-                                the current shell — kept as a swap-in asset)
 
   data/
     sample-logs.js              SAMPLE_LOGS, INITIAL_KB, SEED_HISTORY,
                                 seeded applied-fix on P-001
     pattern-engine.js           tokenize, detectCategory, matchAgainstKB,
                                 mineNewPatterns, analyze
+    log-parse.js                parseLogText, formatSize, levelCounts — shared
+                                by the Miner upload panel and Log Viewer
     aura.js                     Web Audio engine + global haptic listener
+
+  tools/
+    live-log-server.js          standalone Node SSE server — synthetic log
+                                generator for the Live page (see "Live feed")
 
   ds/
     colors_and_type.css         brand palette + Aptos @font-face + typography
@@ -182,6 +194,19 @@ All top-level state lives in `App.jsx`:
 | `history`      | `ScanSession[]`               | Seeded + appended each `processLogs` run |
 | `toasts`       | `Toast[]`                     | Transient notifications                  |
 | `tweakState`   | via `useTweaks()`             | accent color, log density, audio toggle  |
+| `bookmarks`    | `{fileId: Set<lineIdx>}`      | Bookmarked lines — shared by Miner & Log Viewer |
+| `readerPrefs`  | `{query, levels, tail}`       | Search/filter/tail state — shared by both readers |
+| `selection`    | `{fileId, idx} \| null`       | Currently-inspected line — shared by both readers |
+| `timeWindowsState` | `{fileId: [lo, hi]}`      | Narrowed scrubber window per file; absent key = full span |
+
+`bookmarks`/`readerPrefs`/`selection`/`timeWindowsState` are shared between the
+Miner page's live Scanner and the Log Viewer page — both render the same
+`window.LogStream` component against the same `files` array, so a bookmark or
+filter set on one page is still there on the other. Page-local navigation
+(which file is currently shown) stays local to each page instead: `LogViewer`
+keeps its own `activeId`, `Scanner` keeps its own `visibleTab`, so a running
+scan auto-following the file it's processing never yanks the file out from
+under someone reading in the Log Viewer.
 
 No external persistence. Refreshing the page resets everything to
 `INITIAL_KB` + `SEED_HISTORY`. **Export as JSON** (Knowledge Base page) is how
@@ -416,18 +441,31 @@ Three-column layout:
 
 - **Upload panel** — dropzone + file picker + *Load sample bundle* + file list
   with type badge / size / line count / remove + *Process logs* CTA.
-- **Scanner** — file-tab switcher + live log stream with the currently-scanned
-  line highlighted. During `processing`, the **ScanSplash** overlay covers
-  the whole viewport: blurred backdrop, floating particles, progress ring
-  with percent, cycling system narration (Parsing → Tokenising → Clustering →
-  Matching → Computing → Finalizing), streaming window of ~12 lines with
-  ERROR keywords highlighted, horizontal scan-line sweep, 4-stat metrics bar.
+- **Scanner** — file-tab switcher + the shared `LogStream` reader (see Log
+  Viewer below), embedded with `detailsMode="drawer"`: same search/filter/
+  tail/bookmarks/scrubber the Log Viewer has, plus **live per-line KB
+  matching** that updates as the scan runs (not just after it finishes), and
+  the currently-scanned line highlighted via the shared `.lv-line.scanning`
+  state. The line inspector renders as a collapsible bottom drawer instead of
+  a right rail, so it doesn't compete with the Results panel for width.
+  During `processing`, the **ScanSplash** overlay covers the whole viewport:
+  blurred backdrop, floating particles, progress ring with percent, cycling
+  system narration (Parsing → Tokenising → Clustering → Matching → Computing →
+  Finalizing), streaming window of ~12 lines with ERROR keywords highlighted,
+  horizontal scan-line sweep, 4-stat metrics bar.
 - **Results panel** — 4-stat summary (matched, new, log hits, files) + a
   stack of PatternCards (known matches first, new patterns tagged *New*).
+  Populated once `processLogs` finishes — this stays strictly post-scan
+  (aggregation, KB frequency updates, the history entry), distinct from the
+  Scanner's live per-line highlighting above.
 
 ### Log Viewer
-Sidebar (file list) + main (toolbar + stream + time scrubber) + details
-(selected-line inspector).
+Sidebar (file list) + the shared `LogStream` reader (toolbar + stream + time
+scrubber + details pane). `LogStream` (`components/LogStream.jsx`) is fully
+controlled — it owns no state of its own beyond a details-drawer open/closed
+flag — so both this page and the Miner's Scanner render it against the same
+underlying `files`/`kb`, with bookmarks, filters, selection, and per-file time
+windows shared between the two (see State ownership above).
 
 - **Toolbar**: search box with `<mark>` in-message highlight, level filter
   chips (ERROR / WARN / INFO — clicking ERROR also toggles FATAL), showing /
@@ -440,10 +478,16 @@ Sidebar (file list) + main (toolbar + stream + time scrubber) + details
   in 40 buckets. Drag either handle to narrow the window; drag the middle
   band to slide the window forward/backward at fixed width. The stream
   smoothly auto-scrolls to the first in-window line whenever the window
-  changes. Lines without parseable timestamps always show.
+  changes. Lines without parseable timestamps always show. The window is
+  derived, not reset by an effect: switching files or new lines shifting the
+  min/max timestamp never overwrites a window you've narrowed by hand —
+  absence of a stored window just means "full span". Reset returns to that
+  default rather than recomputing one.
 - **Details pane**: timestamp, level, source file, full message in mono
   block, and if the line is a KB match a *MATCHED · P-xxx* card that opens
-  the pattern detail. If no line selected, shows a bookmark digest.
+  the pattern detail. If no line selected, shows a bookmark digest (entries
+  jump across files if needed). On the Miner page this same content renders
+  as a collapsible bottom drawer instead (`detailsMode="drawer"`).
 - **Responsive**: ≤1100 px hides the details pane; ≤820 px collapses the
   sidebar into a horizontal top strip.
 
@@ -500,7 +544,88 @@ Recent scan sessions grid below the table.
 
 ### Toasts
 Top-right stack, 4.2 s auto-dismiss, 260 ms exit animation. Emitted by
-`App.pushToast` on scan completion (matched / new) and applied-fix save.
+`App.pushToast` on scan completion (matched / new) and applied-fix save, and
+by the Live feed on newly-discovered patterns (see below).
+
+---
+
+## Live feed (streaming)
+
+Everything above reads **static, already-loaded files** — a closed, bounded
+buffer you upload once and then search. The **Live** nav page is different:
+it connects to a local Server-Sent-Events source and treats the log stream as
+continuous, appending to a rolling buffer instead of a fixed file.
+
+This is deliberately a **local synthetic generator**, not an integration with
+a real monitoring tool (Datadog, Splunk, etc.). That's a considered choice,
+not a shortcut: a real integration needs a server-side relay to hold an API
+key and translate that vendor's webhook/polling shape into a stream, which is
+a different project. The synthetic generator gets the actual point across —
+watching pattern-matching happen against a feed in real time — with zero
+external accounts, secrets, or hosting.
+
+### Running it
+
+```bash
+node tools/live-log-server.js        # defaults to port 8090
+```
+
+Zero npm dependencies — just Node's built-in `http` module, matching the
+rest of the project's no-build-step ethos. It serves one endpoint,
+`GET /stream`, emitting one JSON log line per SSE `data:` event at randomized
+500–1700ms intervals, with `Access-Control-Allow-Origin: *` so the app (served
+from a different port) can read it via the browser's native `EventSource`.
+Then in the app's **Live** page, paste that URL (default
+`http://127.0.0.1:8090/stream` is pre-filled) and click **Connect**.
+
+### What the generator sends
+
+A weighted mix, defined in `tools/live-log-server.js`:
+- **~55% noise** — INFO/WARN lines that don't match anything, for realism.
+- **~35% known-pattern lines** — reuses the exact keyword phrases from the
+  seeded KB (`connection pool at capacity`, `auth-service` timeouts/circuit
+  breaker, `OOMKilled`), so live matching lights up convincingly.
+- **~10% novel lines** — distinctive, never-seeded error signatures (a gRPC
+  deadline, a webhook signature mismatch, a nil-pointer panic) designed to
+  surface as new-pattern candidates live.
+
+### How the app consumes it (`App.jsx`)
+
+- Incoming lines append to a capped rolling buffer (**500 lines**, oldest
+  dropped) kept in a `live-feed` pseudo-file — same shape as any uploaded
+  file, so it flows through the exact same `window.LogStream` reader as
+  every other page (search, filters, bookmarks, time scrubber, all free).
+- **Per-line KB matching is already live for free** — `LogStream` recomputes
+  `matchAgainstKB(file.lines, kb)` from props on every render, so newly
+  arrived lines get highlighted the instant they land, no extra wiring.
+- **Every 12th line**, `PatternEngine.analyze()` re-runs over the current
+  buffer and merges results into `kb` via `applyAnalysisToKB` — the same
+  merge function the static Miner scan uses (frequency bumps, `source_files`,
+  and newly-mined patterns pushed into `unknown_logs`). This is throttled
+  rather than run per-line purely to keep the toast/KB-growth cadence
+  legible during a demo, not because per-line matching is expensive — it
+  isn't (see the pattern engine section above).
+- A `kbRef`/`liveFileRef` pair mirrors the corresponding state on every
+  change. This exists because the SSE `onmessage` handler is a long-lived
+  closure — without the refs it would keep matching against the `kb` that
+  existed at connect-time, silently never seeing patterns it had itself
+  just added, and re-mining the same lines as "new" every cycle.
+- Disconnecting keeps the buffer; **Clear buffer** empties it explicitly.
+  The connection itself survives navigating to other pages (it's `App`-level
+  state, not page-local), so it keeps ingesting and mining in the background
+  while you're looking at the Knowledge Base or a pattern detail page.
+
+### Known rough edges (accepted for a prototype)
+
+- `mineNewPatterns` promotes any residual line cluster into a new pattern
+  candidate on its *first* occurrence (batch or live) — a byproduct of the
+  existing pattern engine, not something added for live mode. In practice
+  this self-corrects: once a signature is added to the KB, later occurrences
+  match it instead of re-mining, so duplicates taper off within a cycle or
+  two rather than accumulating indefinitely.
+- No reconnect/backoff UI beyond what `EventSource` already does natively
+  (it retries on its own; the app just reflects last-known status rather
+  than tearing the connection down on a transient blip).
 
 ---
 
