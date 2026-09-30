@@ -131,6 +131,10 @@ window.PatternEngine = (function() {
           avg_resolution_min: null,
         },
         isNew: true,
+        // No human has triaged this pattern yet — App.jsx kicks off an AI
+        // suggestion call right after it's merged into the KB and flips this
+        // to 'done'/'error'. Absent entirely on hand-authored KB patterns.
+        fixStatus: 'pending',
       }));
   }
 

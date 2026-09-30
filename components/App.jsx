@@ -11,6 +11,10 @@ const ACCENTS = {
   blue: { main: '#5866E3', dark: '#3F4CC9' },
 };
 
+// Local dev server (tools/live-log-server.js) that also proxies AI fix
+// suggestions — same port it already defaults to for /stream.
+const SUGGEST_FIX_URL = 'http://127.0.0.1:8090/suggest-fix';
+
 function App() {
   const [booted, setBooted] = React.useState(false);
   const [page, setPage] = React.useState('miner');
@@ -123,6 +127,56 @@ function App() {
       out.newPatterns.forEach(p => { next.unknown_logs.patterns.push(p); });
       return next;
     });
+    // Nobody has triaged these yet (mineNewPatterns seeds a placeholder fix
+    // and fixStatus:'pending') — ask the local suggest-fix proxy for a real
+    // one. Fire-and-forget per pattern; each call patches only its own id.
+    out.newPatterns.forEach(p => requestSuggestFix(p));
+  };
+
+  // By-id patch across KB buckets — same shape as saveFix below, reused for
+  // AI suggest-fix results so there's one way to mutate a pattern in place.
+  const patchPattern = (patternId, patch) => {
+    setKb(prev => {
+      const next = JSON.parse(JSON.stringify(prev));
+      for (const bucket of Object.values(next)) {
+        const p = bucket.patterns.find(x => x.id === patternId);
+        if (p) { Object.assign(p, patch); break; }
+      }
+      return next;
+    });
+  };
+
+  const requestSuggestFix = (pattern) => {
+    fetch(SUGGEST_FIX_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: pattern.id,
+        title: pattern.title,
+        description: pattern.description,
+        category: pattern.category,
+        keywords: pattern.keywords,
+        examples: pattern.examples,
+      }),
+    })
+      .then(res => res.ok ? res.json() : res.json().then(e => Promise.reject(new Error(e.error || ('HTTP ' + res.status)))))
+      .then(({ fix, human_intervention }) => {
+        patchPattern(pattern.id, { fix, human_intervention, fixStatus: 'done' });
+      })
+      .catch(() => {
+        patchPattern(pattern.id, { fixStatus: 'error' });
+      });
+  };
+
+  const retrySuggestFix = (patternId) => {
+    let found = null;
+    for (const bucket of Object.values(kb)) {
+      const p = bucket.patterns.find(x => x.id === patternId);
+      if (p) { found = p; break; }
+    }
+    if (!found) return;
+    patchPattern(patternId, { fixStatus: 'pending' });
+    requestSuggestFix(found);
   };
 
   const processLogs = async () => {
@@ -364,6 +418,7 @@ function App() {
               onBack={() => { setPage(lastPage); setDetailId(null); }}
               onOpen={openPattern}
               onSaveFix={saveFix}
+              onRetrySuggestFix={retrySuggestFix}
             />
           )}
         </main>

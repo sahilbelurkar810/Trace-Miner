@@ -641,6 +641,45 @@ A weighted mix, defined in `tools/live-log-server.js`:
 
 ---
 
+## AI-suggested fixes for newly-mined patterns
+
+Known patterns' "Suggested fix" text is hand-authored — someone triaged that
+failure before and the KB remembers what they did. Freshly-mined patterns
+(`mineNewPatterns`, `data/pattern-engine.js`) have no such answer yet; instead
+of a static placeholder forever, the app asks an LLM for one.
+
+`tools/live-log-server.js` (the same local server used for the Live feed,
+above) also serves `POST /suggest-fix`. It proxies a single call to the
+OpenAI API — model configurable via `OPENAI_MODEL` (default `gpt-4o-mini`) —
+so the API key stays server-side, never in browser code:
+
+```bash
+OPENAI_API_KEY=sk-proj-... node tools/live-log-server.js
+```
+
+Whenever `applyAnalysisToKB` merges a newly-mined pattern into `unknown_logs`
+(from a static scan or the live re-analyze loop), `App.jsx` fires one
+fire-and-forget request per new pattern with its title/description/category/
+keywords/examples, and asks for JSON in the exact `{fix, human_intervention}`
+shape every hand-authored KB pattern already uses — so `Pages.jsx` needs no
+"AI vs human" branching on the data shape itself, only on a `fixStatus` field
+(`'pending' | 'done' | 'error'`, absent entirely on human-authored patterns):
+- **pending** — placeholder fix text shown with a "Generating AI
+  suggestion…" note, right after the pattern is mined.
+- **done** — the AI-authored fix + human_intervention, with a small
+  "✦ AI-suggested" badge distinguishing it from an officer-authored one.
+- **error** (server not running, no API key set, or the call failed) — the
+  placeholder stays, with a Retry button. No queueing/persistence across
+  reload — matches this prototype's honest-scope stance elsewhere: a failed
+  call just leaves the pattern looking exactly like a real ticket nobody's
+  picked up yet.
+
+Without `OPENAI_API_KEY` set, the endpoint responds `503` and the app simply
+keeps the placeholder — no crash, no degraded UX beyond staying in the
+`'error'` state.
+
+---
+
 ## Design system
 
 Defined in `ds/colors_and_type.css`.

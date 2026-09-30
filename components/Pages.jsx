@@ -87,7 +87,7 @@ function AppliedFixBlock({ pattern, onSaveFix }) {
 }
 
 // ============= PATTERN DETAIL =============
-function PatternDetail({ patternId, kb, results, onBack, onOpen, onSaveFix }) {
+function PatternDetail({ patternId, kb, results, onBack, onOpen, onSaveFix, onRetrySuggestFix }) {
   let pattern = null, category = null, isNew = false, totalHits = null, matchingFiles = [];
   for (const [cat, bucket] of Object.entries(kb)) {
     const found = bucket.patterns.find(p => p.id === patternId);
@@ -143,7 +143,19 @@ function PatternDetail({ patternId, kb, results, onBack, onOpen, onSaveFix }) {
 
           <div className="detail-section">
             <h3>Suggested fix</h3>
-            <div className="fix-callout">{pattern.fix}</div>
+            <div className={"fix-callout" + (pattern.fixStatus === 'pending' ? ' pending' : '')}>
+              {pattern.fix}
+              {pattern.fixStatus === 'done' && <span className="ai-badge">✦ AI-suggested</span>}
+            </div>
+            {pattern.fixStatus === 'pending' && (
+              <div className="fix-status-note">Generating AI suggestion…</div>
+            )}
+            {pattern.fixStatus === 'error' && (
+              <div className="fix-status-note error">
+                Couldn't reach the AI suggestion service.
+                <button className="fix-retry-btn" onClick={() => onRetrySuggestFix && onRetrySuggestFix(pattern.id)}>Retry</button>
+              </div>
+            )}
           </div>
 
           <div className="detail-section">

@@ -1,10 +1,12 @@
 #!/usr/bin/env node
-// Standalone local log generator for Trace Miner's Live page.
+// Standalone local log generator for Trace Miner's Live page, plus a
+// /suggest-fix endpoint the Miner calls for newly-mined patterns.
 //
-// Zero npm dependencies — Node's built-in `http` module only, matching the
-// rest of this project's zero-build ethos. Pushes synthetic log lines to any
-// connected browser tab over Server-Sent Events (one-directional, so no
-// WebSocket library is needed on either end).
+// Zero npm dependencies — Node's built-in `http`/`https` modules only,
+// matching the rest of this project's zero-build ethos. /stream pushes
+// synthetic log lines to any connected browser tab over Server-Sent Events;
+// /suggest-fix proxies a single call to the OpenAI API so the API key stays
+// server-side instead of sitting in browser code.
 //
 // This is a stand-in for a real monitoring-tool feed, not an integration
 // with one — see DEVLOG (kept outside this repo) for why that's the
@@ -12,10 +14,13 @@
 // control over the demo narrative.
 //
 // Usage:
-//   node tools/live-log-server.js [port]
+//   OPENAI_API_KEY=sk-proj-... node tools/live-log-server.js [port]
 // Then in the app's Live page, connect to http://127.0.0.1:<port>/stream
+// /suggest-fix works without an API key set too — it just responds 503 and
+// the app keeps showing its placeholder fix text instead of an AI one.
 
 const http = require('http');
+const https = require('https');
 
 const PORT = Number(process.argv[2] || process.env.PORT || 8090);
 
@@ -88,10 +93,129 @@ function schedule(res) {
   clients.add({ res, timer });
 }
 
+// ---- /suggest-fix: proxy a single OpenAI call so the API key never has to
+// live in browser code. Given a newly-mined pattern's evidence, asks for a
+// suggested fix + human_intervention runbook in the exact shape every
+// hand-authored knowledge_base.json pattern already uses (data/sample-logs.js)
+// so the app's rendering code needs no "AI vs human" branching on the shape.
+const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+
+const SUGGEST_FIX_SYSTEM_PROMPT = `You are a senior SRE triaging a failure signature a log-mining tool just discovered for the first time (no human has looked at it yet). Given the pattern's title, description, category, keywords, and example log lines, respond with ONLY a JSON object, no prose, no code fences, matching exactly this shape:
+{"fix": "string, 1-3 sentences, concrete and actionable", "human_intervention": {"required": boolean, "owner": "string, a plausible team/role", "severity": "P1"|"P2"|"P3", "runbook": "string, 1-3 sentences of concrete triage/remediation steps", "escalation": "string, 1 sentence describing when/who to escalate to"}}`;
+
+function readJsonBody(req, maxBytes) {
+  return new Promise((resolve, reject) => {
+    let size = 0;
+    const chunks = [];
+    req.on('data', (chunk) => {
+      size += chunk.length;
+      if (size > maxBytes) { reject(new Error('Request body too large')); req.destroy(); return; }
+      chunks.push(chunk);
+    });
+    req.on('end', () => {
+      try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')); }
+      catch (e) { reject(e); }
+    });
+    req.on('error', reject);
+  });
+}
+
+function callOpenAI(pattern) {
+  return new Promise((resolve, reject) => {
+    const userContent = [
+      `Title: ${pattern.title || ''}`,
+      `Category: ${pattern.category || 'unknown'}`,
+      `Description: ${pattern.description || ''}`,
+      `Keywords: ${(pattern.keywords || []).join(', ')}`,
+      `Example log lines:`,
+      ...(pattern.examples || []).map((e) => `  - ${e}`),
+    ].join('\n');
+
+    const payload = JSON.stringify({
+      model: OPENAI_MODEL,
+      messages: [
+        { role: 'system', content: SUGGEST_FIX_SYSTEM_PROMPT },
+        { role: 'user', content: userContent },
+      ],
+      response_format: { type: 'json_object' },
+      temperature: 0.3,
+      max_tokens: 500,
+    });
+
+    const req = https.request({
+      hostname: 'api.openai.com',
+      path: '/v1/chat/completions',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(payload),
+        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+      },
+    }, (res) => {
+      let body = '';
+      res.on('data', (c) => { body += c; });
+      res.on('end', () => {
+        if (res.statusCode < 200 || res.statusCode >= 300) {
+          reject(new Error(`OpenAI API returned ${res.statusCode}: ${body.slice(0, 300)}`));
+          return;
+        }
+        try {
+          const parsed = JSON.parse(body);
+          const content = parsed.choices && parsed.choices[0] && parsed.choices[0].message && parsed.choices[0].message.content;
+          if (!content) { reject(new Error('OpenAI response had no message content')); return; }
+          const fixJson = JSON.parse(content);
+          if (!fixJson.fix || !fixJson.human_intervention) { reject(new Error('OpenAI response missing fix/human_intervention')); return; }
+          resolve(fixJson);
+        } catch (e) { reject(new Error('Failed to parse OpenAI response: ' + e.message)); }
+      });
+    });
+    req.on('error', reject);
+    req.write(payload);
+    req.end();
+  });
+}
+
+async function handleSuggestFix(req, res) {
+  if (!process.env.OPENAI_API_KEY) {
+    res.writeHead(503, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+    res.end(JSON.stringify({ error: 'OPENAI_API_KEY not set on the server' }));
+    return;
+  }
+  let pattern;
+  try { pattern = await readJsonBody(req, 1e6); }
+  catch (e) {
+    res.writeHead(400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+    res.end(JSON.stringify({ error: 'Invalid request body: ' + e.message }));
+    return;
+  }
+  try {
+    const fixJson = await callOpenAI(pattern);
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+    res.end(JSON.stringify(fixJson));
+  } catch (e) {
+    res.writeHead(502, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+    res.end(JSON.stringify({ error: e.message }));
+  }
+}
+
 const server = http.createServer((req, res) => {
+  if (req.method === 'POST' && req.url === '/suggest-fix') {
+    handleSuggestFix(req, res);
+    return;
+  }
+  if (req.method === 'OPTIONS' && req.url === '/suggest-fix') {
+    res.writeHead(204, {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type',
+    });
+    res.end();
+    return;
+  }
+
   if (req.url !== '/stream') {
     res.writeHead(404, { 'Content-Type': 'text/plain' });
-    res.end('Not found. Connect to /stream.');
+    res.end('Not found. Connect to /stream, or POST to /suggest-fix.');
     return;
   }
 
@@ -115,5 +239,6 @@ const server = http.createServer((req, res) => {
 server.listen(PORT, () => {
   console.log(`Trace Miner live-log generator running.`);
   console.log(`Connect the app's Live page to: http://127.0.0.1:${PORT}/stream`);
+  console.log(`AI fix suggestions: POST http://127.0.0.1:${PORT}/suggest-fix` + (process.env.OPENAI_API_KEY ? '' : ' (OPENAI_API_KEY not set — will return 503)'));
   console.log('Ctrl+C to stop.');
 });
