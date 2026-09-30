@@ -147,6 +147,18 @@ function App() {
   };
 
   const requestSuggestFix = (pattern) => {
+    // kbRef, not the closed-over `kb` state — requestSuggestFix is called
+    // from applyAnalysisToKB, which the live SSE loop invokes from a
+    // long-lived closure that would otherwise see a stale KB (same reason
+    // kbRef exists at all, see connectLive above).
+    const related = window.PatternEngine.suggestRelated(pattern, kbRef.current, 3)
+      .map(r => ({
+        id: r.pattern.id,
+        title: r.pattern.title,
+        fix: r.pattern.fix,
+        applied_fix: r.pattern.applied_fix ? r.pattern.applied_fix.text : null,
+      }));
+
     fetch(SUGGEST_FIX_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -157,6 +169,7 @@ function App() {
         category: pattern.category,
         keywords: pattern.keywords,
         examples: pattern.examples,
+        relatedFixes: related,
       }),
     })
       .then(res => res.ok ? res.json() : res.json().then(e => Promise.reject(new Error(e.error || ('HTTP ' + res.status)))))

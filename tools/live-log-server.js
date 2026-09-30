@@ -14,6 +14,10 @@
 // control over the demo narrative.
 //
 // Usage:
+//   node tools/live-log-server.js [port]
+// Reads OPENAI_API_KEY from a .env file next to this script if present
+// (never commit that file — see .gitignore), or from the environment
+// directly, e.g.:
 //   OPENAI_API_KEY=sk-proj-... node tools/live-log-server.js [port]
 // Then in the app's Live page, connect to http://127.0.0.1:<port>/stream
 // /suggest-fix works without an API key set too — it just responds 503 and
@@ -21,6 +25,30 @@
 
 const http = require('http');
 const https = require('https');
+const fs = require('fs');
+const path = require('path');
+
+// Minimal .env loader — zero npm deps, matching the rest of this file.
+// Only sets vars that aren't already in the environment, so an explicit
+// `OPENAI_API_KEY=... node tools/live-log-server.js` still wins.
+(function loadDotEnv() {
+  const envPath = path.join(__dirname, '..', '.env');
+  let text;
+  try { text = fs.readFileSync(envPath, 'utf8'); }
+  catch { return; }
+  for (const line of text.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const eq = trimmed.indexOf('=');
+    if (eq === -1) continue;
+    const key = trimmed.slice(0, eq).trim();
+    let value = trimmed.slice(eq + 1).trim();
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+    if (!(key in process.env)) process.env[key] = value;
+  }
+})();
 
 const PORT = Number(process.argv[2] || process.env.PORT || 8090);
 
@@ -101,7 +129,9 @@ function schedule(res) {
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 
 const SUGGEST_FIX_SYSTEM_PROMPT = `You are a senior SRE triaging a failure signature a log-mining tool just discovered for the first time (no human has looked at it yet). Given the pattern's title, description, category, keywords, and example log lines, respond with ONLY a JSON object, no prose, no code fences, matching exactly this shape:
-{"fix": "string, 1-3 sentences, concrete and actionable", "human_intervention": {"required": boolean, "owner": "string, a plausible team/role", "severity": "P1"|"P2"|"P3", "runbook": "string, 1-3 sentences of concrete triage/remediation steps", "escalation": "string, 1 sentence describing when/who to escalate to"}}`;
+{"fix": "string, 1-3 sentences, concrete and actionable", "human_intervention": {"required": boolean, "owner": "string, a plausible team/role", "severity": "P1"|"P2"|"P3", "runbook": "string, 1-3 sentences of concrete triage/remediation steps", "escalation": "string, 1 sentence describing when/who to escalate to"}}
+
+You may also be given a list of related patterns from the knowledge base, each with the fix that was suggested and — when present — the fix a human actually applied for it historically. When a related pattern is a close match for the new one, prefer adapting its proven fix (especially an applied_fix, since that's a confirmed real-world resolution, not just a suggestion) over inventing something unrelated. When the related patterns are only loosely similar, use them as context but tailor the fix to this pattern's own evidence instead of copying one that doesn't fit.`;
 
 function readJsonBody(req, maxBytes) {
   return new Promise((resolve, reject) => {
@@ -129,6 +159,14 @@ function callOpenAI(pattern) {
       `Keywords: ${(pattern.keywords || []).join(', ')}`,
       `Example log lines:`,
       ...(pattern.examples || []).map((e) => `  - ${e}`),
+      ...((pattern.relatedFixes || []).length ? [
+        '',
+        'Related patterns already in the knowledge base (most similar first):',
+        ...pattern.relatedFixes.map((r) =>
+          `  - ${r.id} "${r.title}" — suggested fix: ${r.fix || 'none on record'}` +
+          (r.applied_fix ? ` | actually applied: ${r.applied_fix}` : '')
+        ),
+      ] : []),
     ].join('\n');
 
     const payload = JSON.stringify({

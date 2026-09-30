@@ -14,22 +14,6 @@ function ConfidenceDonut({ value }) {
   );
 }
 
-function suggestRelated(pattern, kb, limit = 3) {
-  const kws = new Set((pattern.keywords||[]).map(k => k.toLowerCase()));
-  const all = [];
-  for (const [cat, bucket] of Object.entries(kb)) {
-    for (const p of bucket.patterns) {
-      if (p.id === pattern.id) continue;
-      const other = new Set((p.keywords||[]).map(k => k.toLowerCase()));
-      let overlap = 0;
-      kws.forEach(k => { if (other.has(k)) overlap += 1; });
-      if ((pattern.related_patterns||[]).includes(p.id)) overlap += 2;
-      if (overlap > 0) all.push({pattern: p, category: cat, score: overlap / Math.max(1, Math.max(kws.size, other.size))});
-    }
-  }
-  return all.sort((a,b) => b.score - a.score).slice(0, limit);
-}
-
 // ============= APPLIED FIX BLOCK (editable) =============
 function AppliedFixBlock({ pattern, onSaveFix }) {
   const existing = pattern.applied_fix || null;
@@ -105,7 +89,7 @@ function PatternDetail({ patternId, kb, results, onBack, onOpen, onSaveFix, onRe
 
   const srcFiles = matchingFiles.length ? matchingFiles : (pattern.source_files||[]).map(n => ({name:n, lineIdxs:[]}));
   const hi = pattern.human_intervention;
-  const related = suggestRelated(pattern, kb, 3);
+  const related = window.PatternEngine.suggestRelated(pattern, kb, 3);
 
   const weeks = ['W12','W13','W14','W15','W16','W17'];
   const weekData = weeks.map((w,i) => ({ w, n: Math.max(1, Math.round((pattern.frequency||6)/6 * (0.6 + ((i*13)%7)/10 + 0.5) + (i===5?2:0))) }));

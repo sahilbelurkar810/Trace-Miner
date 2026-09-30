@@ -651,19 +651,33 @@ of a static placeholder forever, the app asks an LLM for one.
 `tools/live-log-server.js` (the same local server used for the Live feed,
 above) also serves `POST /suggest-fix`. It proxies a single call to the
 OpenAI API — model configurable via `OPENAI_MODEL` (default `gpt-4o-mini`) —
-so the API key stays server-side, never in browser code:
+so the API key stays server-side, never in browser code. Put it in a `.env`
+file at the project root (gitignored — see `.env.example`) so you don't have
+to retype it every time:
 
 ```bash
-OPENAI_API_KEY=sk-proj-... node tools/live-log-server.js
+# .env
+OPENAI_API_KEY=sk-proj-your-real-key
+
+node tools/live-log-server.js
 ```
+
+or set it inline for a one-off run: `OPENAI_API_KEY=sk-proj-... node tools/live-log-server.js`.
 
 Whenever `applyAnalysisToKB` merges a newly-mined pattern into `unknown_logs`
 (from a static scan or the live re-analyze loop), `App.jsx` fires one
 fire-and-forget request per new pattern with its title/description/category/
-keywords/examples, and asks for JSON in the exact `{fix, human_intervention}`
-shape every hand-authored KB pattern already uses — so `Pages.jsx` needs no
-"AI vs human" branching on the data shape itself, only on a `fixStatus` field
-(`'pending' | 'done' | 'error'`, absent entirely on human-authored patterns):
+keywords/examples — **plus up to 3 related patterns** (`PatternEngine.suggestRelated`,
+the same keyword-overlap function that powers Pages.jsx's "Solutions from
+similar past incidents" panel), each with its suggested `fix` and, when a
+human actually resolved it, `applied_fix`. The system prompt tells the model
+to prefer adapting a related pattern's proven fix — especially an
+`applied_fix`, a confirmed real-world resolution — over inventing one from
+scratch when a close match exists. It asks for JSON in the exact
+`{fix, human_intervention}` shape every hand-authored KB pattern already
+uses — so `Pages.jsx` needs no "AI vs human" branching on the data shape
+itself, only on a `fixStatus` field (`'pending' | 'done' | 'error'`, absent
+entirely on human-authored patterns):
 - **pending** — placeholder fix text shown with a "Generating AI
   suggestion…" note, right after the pattern is mined.
 - **done** — the AI-authored fix + human_intervention, with a small

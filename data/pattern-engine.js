@@ -138,6 +138,27 @@ window.PatternEngine = (function() {
       }));
   }
 
+  // Find patterns related to `pattern` by keyword overlap (plus an explicit
+  // related_patterns boost). Shared by Pages.jsx's "Solutions from similar
+  // past incidents" block and App.jsx's suggest-fix request, which feeds
+  // their fix/applied_fix text to the LLM so it can build on a proven
+  // remediation instead of guessing blind.
+  function suggestRelated(pattern, kb, limit = 3) {
+    const kws = new Set((pattern.keywords||[]).map(k => k.toLowerCase()));
+    const all = [];
+    for (const [cat, bucket] of Object.entries(kb)) {
+      for (const p of bucket.patterns) {
+        if (p.id === pattern.id) continue;
+        const other = new Set((p.keywords||[]).map(k => k.toLowerCase()));
+        let overlap = 0;
+        kws.forEach(k => { if (other.has(k)) overlap += 1; });
+        if ((pattern.related_patterns||[]).includes(p.id)) overlap += 2;
+        if (overlap > 0) all.push({pattern: p, category: cat, score: overlap / Math.max(1, Math.max(kws.size, other.size))});
+      }
+    }
+    return all.sort((a,b) => b.score - a.score).slice(0, limit);
+  }
+
   function titleCase(s) {
     s = s.replace(/^[A-Z]+:?\s*/,'').replace(/\s+\d+ms.*/,'').replace(/pod\s+\S+/,'pod');
     return s.charAt(0).toUpperCase() + s.slice(1);
@@ -183,5 +204,5 @@ window.PatternEngine = (function() {
     return { fileResults, aggregated, newPatterns };
   }
 
-  return { analyze, detectCategory, matchAgainstKB, mineNewPatterns, tokenize };
+  return { analyze, detectCategory, matchAgainstKB, mineNewPatterns, tokenize, suggestRelated };
 })();
