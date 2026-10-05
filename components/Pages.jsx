@@ -126,10 +126,9 @@ function PatternDetail({ patternId, kb, results, onBack, onOpen, onSaveFix, onRe
           </div>
 
           <div className="detail-section">
-            <h3>Suggested fix</h3>
-            <div className={"fix-callout" + (pattern.fixStatus === 'pending' ? ' pending' : '')}>
+            <h3>{pattern.fixStatus ? 'AI Suggested Fix' : 'Suggested fix'}</h3>
+            <div className={"fix-callout" + (pattern.fixStatus === 'pending' ? ' pending' : '') + (pattern.fixStatus === 'done' ? ' ai-done' : '')}>
               {pattern.fix}
-              {pattern.fixStatus === 'done' && <span className="ai-badge">✦ AI-suggested</span>}
             </div>
             {pattern.fixStatus === 'pending' && (
               <div className="fix-status-note">Generating AI suggestion…</div>
