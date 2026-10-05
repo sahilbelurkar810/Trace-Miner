@@ -131,7 +131,7 @@ const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 const SUGGEST_FIX_SYSTEM_PROMPT = `You are a senior SRE triaging a failure signature a log-mining tool just discovered for the first time (no human has looked at it yet). Given the pattern's title, description, category, keywords, and example log lines, respond with ONLY a JSON object, no prose, no code fences, matching exactly this shape:
 {"fix": "string, 1-3 sentences, concrete and actionable", "human_intervention": {"required": boolean, "owner": "string, a plausible team/role", "severity": "P1"|"P2"|"P3", "runbook": "string, 1-3 sentences of concrete triage/remediation steps", "escalation": "string, 1 sentence describing when/who to escalate to"}}
 
-You may also be given a list of related patterns from the knowledge base, each with the fix that was suggested and — when present — the fix a human actually applied for it historically. When a related pattern is a close match for the new one, prefer adapting its proven fix (especially an applied_fix, since that's a confirmed real-world resolution, not just a suggestion) over inventing something unrelated. When the related patterns are only loosely similar, use them as context but tailor the fix to this pattern's own evidence instead of copying one that doesn't fit.`;
+You will also be given the full existing knowledge base — every other pattern already on record, each with the fix that was suggested and, when present, the fix a human actually applied historically. It is NOT pre-filtered to "related" patterns — decide for yourself which entries (if any) are actually relevant to the new pattern, including ones that share the same failing service or root cause family even if their wording differs. When you find a genuine match, prefer adapting its proven fix — especially an applied_fix, since that's a confirmed real-world resolution, not just a suggestion — over inventing something unrelated. If nothing in the knowledge base is actually relevant, say so to yourself and build the fix solely from this new pattern's own evidence instead of forcing a weak match.`;
 
 function readJsonBody(req, maxBytes) {
   return new Promise((resolve, reject) => {
@@ -159,12 +159,12 @@ function callOpenAI(pattern) {
       `Keywords: ${(pattern.keywords || []).join(', ')}`,
       `Example log lines:`,
       ...(pattern.examples || []).map((e) => `  - ${e}`),
-      ...((pattern.relatedFixes || []).length ? [
+      ...((pattern.knowledgeBase || []).length ? [
         '',
-        'Related patterns already in the knowledge base (most similar first):',
-        ...pattern.relatedFixes.map((r) =>
-          `  - ${r.id} "${r.title}" — suggested fix: ${r.fix || 'none on record'}` +
-          (r.applied_fix ? ` | actually applied: ${r.applied_fix}` : '')
+        `Full existing knowledge base (${pattern.knowledgeBase.length} other patterns on record):`,
+        ...pattern.knowledgeBase.map((p) =>
+          `  - [${p.category || 'unknown'}] ${p.id} "${p.title}" (keywords: ${(p.keywords||[]).join(', ')}) — suggested fix: ${p.fix || 'none on record'}` +
+          (p.applied_fix ? ` | actually applied: ${p.applied_fix}` : '')
         ),
       ] : []),
     ].join('\n');

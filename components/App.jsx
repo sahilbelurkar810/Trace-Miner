@@ -151,13 +151,27 @@ function App() {
     // from applyAnalysisToKB, which the live SSE loop invokes from a
     // long-lived closure that would otherwise see a stale KB (same reason
     // kbRef exists at all, see connectLive above).
-    const related = window.PatternEngine.suggestRelated(pattern, kbRef.current, 3)
-      .map(r => ({
-        id: r.pattern.id,
-        title: r.pattern.title,
-        fix: r.pattern.fix,
-        applied_fix: r.pattern.applied_fix ? r.pattern.applied_fix.text : null,
-      }));
+    //
+    // Send the whole knowledge base rather than pre-filtering to a handful
+    // of keyword-overlap matches (PatternEngine.suggestRelated, used for the
+    // separate "solutions from similar past incidents" panel) — that scoring
+    // is crude enough to miss genuinely related patterns (e.g. "pool" vs.
+    // "connection pool" don't literally overlap), and the KB is small enough
+    // right now that letting the model see everything and decide what's
+    // relevant itself is simpler and more robust than fixing the matcher.
+    const knowledgeBase = Object.entries(kbRef.current).flatMap(([category, bucket]) =>
+      (bucket.patterns || [])
+        .filter(p => p.id !== pattern.id)
+        .map(p => ({
+          id: p.id,
+          category,
+          title: p.title,
+          description: p.description,
+          keywords: p.keywords,
+          fix: p.fix,
+          applied_fix: p.applied_fix ? p.applied_fix.text : null,
+        }))
+    );
 
     fetch(SUGGEST_FIX_URL, {
       method: 'POST',
@@ -169,7 +183,7 @@ function App() {
         category: pattern.category,
         keywords: pattern.keywords,
         examples: pattern.examples,
-        relatedFixes: related,
+        knowledgeBase,
       }),
     })
       .then(res => res.ok ? res.json() : res.json().then(e => Promise.reject(new Error(e.error || ('HTTP ' + res.status)))))

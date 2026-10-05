@@ -667,17 +667,24 @@ or set it inline for a one-off run: `OPENAI_API_KEY=sk-proj-... node tools/live-
 Whenever `applyAnalysisToKB` merges a newly-mined pattern into `unknown_logs`
 (from a static scan or the live re-analyze loop), `App.jsx` fires one
 fire-and-forget request per new pattern with its title/description/category/
-keywords/examples — **plus up to 3 related patterns** (`PatternEngine.suggestRelated`,
-the same keyword-overlap function that powers Pages.jsx's "Solutions from
-similar past incidents" panel), each with its suggested `fix` and, when a
-human actually resolved it, `applied_fix`. The system prompt tells the model
-to prefer adapting a related pattern's proven fix — especially an
-`applied_fix`, a confirmed real-world resolution — over inventing one from
-scratch when a close match exists. It asks for JSON in the exact
-`{fix, human_intervention}` shape every hand-authored KB pattern already
-uses — so `Pages.jsx` needs no "AI vs human" branching on the data shape
-itself, only on a `fixStatus` field (`'pending' | 'done' | 'error'`, absent
-entirely on human-authored patterns):
+keywords/examples — **plus the entire knowledge base** (every other pattern
+on record, across every category, with its suggested `fix` and, when a human
+actually resolved it, `applied_fix`). This is deliberately the whole KB, not
+a pre-filtered shortlist: an earlier version sent only the top 3 matches from
+`PatternEngine.suggestRelated` (keyword-overlap scoring, still used as-is for
+Pages.jsx's separate "Solutions from similar past incidents" panel), but that
+scoring is crude enough to miss genuinely related patterns — e.g. "pool" and
+"connection pool" don't literally overlap as tokens. The KB is small enough
+right now that it's simpler and more robust to let the model see everything
+and judge relevance itself; the system prompt tells it to prefer adapting a
+genuinely matching pattern's proven fix — especially an `applied_fix`, a
+confirmed real-world resolution — over inventing one from scratch, and to
+ignore anything that isn't actually relevant rather than forcing a weak
+match. (This whole-KB approach is a prototype-scale choice — see "Known rough
+edges" below.) It asks for JSON in the exact `{fix, human_intervention}`
+shape every hand-authored KB pattern already uses — so `Pages.jsx` needs no
+"AI vs human" branching on the data shape itself, only on a `fixStatus` field
+(`'pending' | 'done' | 'error'`, absent entirely on human-authored patterns):
 - **pending** — placeholder fix text shown with a "Generating AI
   suggestion…" note, right after the pattern is mined.
 - **done** — the AI-authored fix + human_intervention, with a small
@@ -691,6 +698,17 @@ entirely on human-authored patterns):
 Without `OPENAI_API_KEY` set, the endpoint responds `503` and the app simply
 keeps the placeholder — no crash, no degraded UX beyond staying in the
 `'error'` state.
+
+### Known rough edges (accepted for a prototype)
+
+- Sending the whole KB on every newly-mined pattern doesn't scale indefinitely
+  — token cost and prompt size grow linearly with KB size. Fine for a demo
+  KB of a handful of patterns; a production version would want retrieval
+  (embeddings, or at least a smarter keyword/BM25 pre-filter) instead of
+  "send everything and let the model sort it out."
+- No caching/dedup — if the same pattern gets re-mined (e.g. the live
+  re-analyze loop), it gets its own fresh `/suggest-fix` call rather than
+  reusing a prior answer.
 
 ---
 
