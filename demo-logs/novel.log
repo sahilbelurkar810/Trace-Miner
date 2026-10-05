@@ -1,0 +1,3 @@
+2026-10-05T11:00:01.000Z ERROR billing-service invoice reconciliation drift detected for merchant mch_44291, ledger out of balance by $12.40
+2026-10-05T11:00:03.000Z ERROR billing-service invoice reconciliation drift detected for merchant mch_44291, ledger out of balance by $12.40
+2026-10-05T11:00:05.000Z INFO healthcheck GET /healthz 200 2ms
