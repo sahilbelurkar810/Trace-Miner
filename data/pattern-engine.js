@@ -26,11 +26,24 @@ window.PatternEngine = (function() {
     return bestScore > 0 ? best : 'unknown_logs';
   }
 
+  // Timestamp fragments — e.g. '2026-04-22t08' or '018z' (the leftover of
+  // ISO ".018Z" once punctuation is stripped to spaces above). Uploaded-file
+  // lines carry `msg: raw` (full line, timestamp included — see
+  // data/log-parse.js), so without this filter two occurrences of the exact
+  // same error at different times tokenize to different leading tokens,
+  // which both pollutes keyword-overlap matching (a shared generic '000z'
+  // can cross the match threshold on its own) and splits what should be one
+  // mined pattern into several, each getting its own separate AI-suggested-
+  // fix call downstream.
+  const TIMESTAMP_DATE_RE = /^\d{4}-\d{2}-\d{2}(t\d*)?$/;
+  const TIMESTAMP_MS_RE = /^\d{1,3}z$/;
+
   function tokenize(text) {
     return (text||'').toLowerCase()
       .replace(/[^a-z0-9\s_\-\/]/g,' ')
       .split(/\s+/)
-      .filter(w => w && w.length > 2 && !STOPWORDS.has(w) && !/^\d+$/.test(w));
+      .filter(w => w && w.length > 2 && !STOPWORDS.has(w) && !/^\d+$/.test(w))
+      .filter(w => !TIMESTAMP_DATE_RE.test(w) && !TIMESTAMP_MS_RE.test(w));
   }
 
   // Error/warn lines only — those carry the pattern signal

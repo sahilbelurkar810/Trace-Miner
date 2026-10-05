@@ -322,15 +322,29 @@ ScanSession = {
 ## The pattern engine
 
 `data/pattern-engine.js` exposes a single global `window.PatternEngine` with
-five public functions. It is deliberately **explainable** — no black-box ML.
+six public functions. It is deliberately **explainable** — no black-box ML.
 
 | Function                    | What it does                                              |
 |-----------------------------|-----------------------------------------------------------|
-| `tokenize(text)`            | Lowercase → strip punctuation → split → drop stopwords & short & numeric-only tokens |
+| `tokenize(text)`            | Lowercase → strip punctuation → split → drop stopwords & short & numeric-only tokens & timestamp-shaped tokens |
 | `detectCategory(lines)`     | Keyword-vote against `CATEGORY_HINTS` — returns `'database_logs'`, `'api_logs'`, `'infra_logs'`, or `'unknown_logs'` |
 | `matchAgainstKB(lines, kb, threshold=0.55)` | For every ERROR/WARN/FATAL line, compute `cosineKeyword(text, pattern.keywords)` against each KB pattern; collect hits above threshold |
 | `mineNewPatterns(unmatched, sourceFile)` | Group residual lines by a 3-token signature, emit a new `P-9xx` pattern per cluster with auto-generated metadata |
 | `analyze(files, kb, threshold=0.5)` | Orchestrator — runs both per-file matching and new-pattern mining, aggregates hits across files |
+| `suggestRelated(pattern, kb, limit=3)` | Keyword-overlap related-pattern finder — powers Pages.jsx's "Solutions from similar past incidents" panel (the AI-suggested-fix request below sends the *whole* KB instead of this shortlist, for reasons covered in that section) |
+
+`tokenize` drops timestamp-shaped tokens (`2026-04-22t08`, `018z` — the
+leftover of an ISO `.018Z` fragment once punctuation is stripped to spaces)
+as well as stopwords. This matters because uploaded-file lines carry
+`msg: raw` (the full line, timestamp included — see `data/log-parse.js`):
+without this filter, two occurrences of the exact same error at different
+times tokenize to different leading tokens, which both inflates false-positive
+keyword-overlap matches (a shared generic `018z`/`000z` token alone can cross
+the match threshold) and splits what should be one mined pattern into several
+— each of which would then fire its own separate, redundant AI-suggested-fix
+call. Found and fixed after testing produced exactly that: two identical lines a
+couple of seconds apart mined as two different `P-9xx` patterns — differing
+only in their millisecond timestamp — instead of one pattern seen twice.
 
 ### `cosineKeyword` — the scoring function
 
