@@ -139,6 +139,17 @@ function PatternDetail({ patternId, kb, results, onBack, onOpen, onSaveFix, onRe
                 <button className="fix-retry-btn" onClick={() => onRetrySuggestFix && onRetrySuggestFix(pattern.id)}>Retry</button>
               </div>
             )}
+            {pattern.fixStatus === 'done' && (
+              <div className="ai-chat-shell">
+                <div className="ai-chat-label">Ask a follow-up <span className="ai-chat-soon">Coming soon</span></div>
+                <div className="ai-chat-row">
+                  <input className="ai-chat-input" disabled
+                    placeholder="e.g. what if the root cause is X instead? add more context…"/>
+                  <button className="ai-chat-send" disabled>Ask</button>
+                </div>
+                <div className="ai-chat-hint">Refine this suggestion in a conversation, grounded in this pattern plus the full knowledge base — not wired up yet.</div>
+              </div>
+            )}
           </div>
 
           <div className="detail-section">

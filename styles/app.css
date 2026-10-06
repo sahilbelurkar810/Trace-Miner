@@ -847,6 +847,50 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
 }
 .fix-retry-btn:hover { border-color: var(--accent); color: var(--accent); }
 
+.ai-chat-shell {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--border-hair);
+}
+.ai-chat-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--fg-3);
+  font-weight: 700;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ai-chat-soon {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 700;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  padding: 1px 7px;
+}
+.ai-chat-row { display: flex; gap: 8px; }
+.ai-chat-input {
+  flex: 1;
+  border: 1px solid var(--border-hair);
+  padding: 8px 12px;
+  font-size: 13px;
+  background: var(--gray-50, #fafafa);
+  color: var(--fg-3);
+}
+.ai-chat-send {
+  border: 1px solid var(--border-hair);
+  background: none;
+  padding: 8px 16px;
+  font-size: 13px;
+  color: var(--fg-3);
+}
+.ai-chat-hint { margin-top: 8px; font-size: 11px; color: var(--fg-3); }
+
 .aside .aside-card {
   padding: 20px;
   border: 1px solid var(--border-hair);
