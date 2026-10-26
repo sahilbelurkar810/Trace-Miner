@@ -1,0 +1,3 @@
+2026-04-22T08:22:44.018Z ERROR connection pool at capacity: 200/200 active, 47 waiting
+2026-04-22T08:23:44.018Z ERROR connection timeout after 5000ms (pool exhausted)
+2026-04-22T08:24:12.117Z INFO recovery sequence initiated

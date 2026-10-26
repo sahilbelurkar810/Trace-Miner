@@ -1,0 +1,6 @@
+.env
+.claude
+*.png
+demo-logs
+tools/static-server.js
+tools/live-log-server.js

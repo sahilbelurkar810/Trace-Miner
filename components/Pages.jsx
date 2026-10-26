@@ -14,22 +14,6 @@ function ConfidenceDonut({ value }) {
   );
 }
 
-function suggestRelated(pattern, kb, limit = 3) {
-  const kws = new Set((pattern.keywords||[]).map(k => k.toLowerCase()));
-  const all = [];
-  for (const [cat, bucket] of Object.entries(kb)) {
-    for (const p of bucket.patterns) {
-      if (p.id === pattern.id) continue;
-      const other = new Set((p.keywords||[]).map(k => k.toLowerCase()));
-      let overlap = 0;
-      kws.forEach(k => { if (other.has(k)) overlap += 1; });
-      if ((pattern.related_patterns||[]).includes(p.id)) overlap += 2;
-      if (overlap > 0) all.push({pattern: p, category: cat, score: overlap / Math.max(1, Math.max(kws.size, other.size))});
-    }
-  }
-  return all.sort((a,b) => b.score - a.score).slice(0, limit);
-}
-
 // ============= APPLIED FIX BLOCK (editable) =============
 function AppliedFixBlock({ pattern, onSaveFix }) {
   const existing = pattern.applied_fix || null;
@@ -87,7 +71,7 @@ function AppliedFixBlock({ pattern, onSaveFix }) {
 }
 
 // ============= PATTERN DETAIL =============
-function PatternDetail({ patternId, kb, results, onBack, onOpen, onSaveFix }) {
+function PatternDetail({ patternId, kb, results, onBack, onOpen, onSaveFix, onRetrySuggestFix }) {
   let pattern = null, category = null, isNew = false, totalHits = null, matchingFiles = [];
   for (const [cat, bucket] of Object.entries(kb)) {
     const found = bucket.patterns.find(p => p.id === patternId);
@@ -105,7 +89,7 @@ function PatternDetail({ patternId, kb, results, onBack, onOpen, onSaveFix }) {
 
   const srcFiles = matchingFiles.length ? matchingFiles : (pattern.source_files||[]).map(n => ({name:n, lineIdxs:[]}));
   const hi = pattern.human_intervention;
-  const related = suggestRelated(pattern, kb, 3);
+  const related = window.PatternEngine.suggestRelated(pattern, kb, 3);
 
   const weeks = ['W12','W13','W14','W15','W16','W17'];
   const weekData = weeks.map((w,i) => ({ w, n: Math.max(1, Math.round((pattern.frequency||6)/6 * (0.6 + ((i*13)%7)/10 + 0.5) + (i===5?2:0))) }));
@@ -142,8 +126,30 @@ function PatternDetail({ patternId, kb, results, onBack, onOpen, onSaveFix }) {
           </div>
 
           <div className="detail-section">
-            <h3>Suggested fix</h3>
-            <div className="fix-callout">{pattern.fix}</div>
+            <h3>{pattern.fixStatus ? 'AI Suggested Fix' : 'Suggested fix'}</h3>
+            <div className={"fix-callout" + (pattern.fixStatus === 'pending' ? ' pending' : '') + (pattern.fixStatus === 'done' ? ' ai-done' : '')}>
+              {pattern.fix}
+            </div>
+            {pattern.fixStatus === 'pending' && (
+              <div className="fix-status-note">Generating AI suggestion…</div>
+            )}
+            {pattern.fixStatus === 'error' && (
+              <div className="fix-status-note error">
+                Couldn't reach the AI suggestion service.
+                <button className="fix-retry-btn" onClick={() => onRetrySuggestFix && onRetrySuggestFix(pattern.id)}>Retry</button>
+              </div>
+            )}
+            {pattern.fixStatus === 'done' && (
+              <div className="ai-chat-shell">
+                <div className="ai-chat-label">Ask a follow-up <span className="ai-chat-soon">Coming soon</span></div>
+                <div className="ai-chat-row">
+                  <input className="ai-chat-input" disabled
+                    placeholder="e.g. what if the root cause is X instead? add more context…"/>
+                  <button className="ai-chat-send" disabled>Ask</button>
+                </div>
+                <div className="ai-chat-hint">Refine this suggestion in a conversation, grounded in this pattern plus the full knowledge base — not wired up yet.</div>
+              </div>
+            )}
           </div>
 
           <div className="detail-section">

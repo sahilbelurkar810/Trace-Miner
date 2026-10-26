@@ -11,6 +11,13 @@ const ACCENTS = {
   blue: { main: '#5866E3', dark: '#3F4CC9' },
 };
 
+// Local dev server (tools/live-log-server.js) that also proxies AI fix
+// suggestions — same port it already defaults to for /stream.
+// On a deployed host (Vercel) it goes to the serverless function instead.
+const SUGGEST_FIX_URL = ['localhost', '127.0.0.1', ''].includes(location.hostname)
+  ? 'http://127.0.0.1:8090/suggest-fix'
+  : '/api/suggest-fix';
+
 function App() {
   const [booted, setBooted] = React.useState(false);
   const [page, setPage] = React.useState('miner');
@@ -23,6 +30,31 @@ function App() {
   const [kb, setKb] = React.useState(() => JSON.parse(JSON.stringify(window.INITIAL_KB)));
   const [history, setHistory] = React.useState(() => window.SEED_HISTORY ? [...window.SEED_HISTORY] : []);
   const [toasts, setToasts] = React.useState([]);
+
+  // Shared log-reading state — lives here (not in LogViewer/Scanner) so a
+  // bookmark or filter made on one page is still there on the other, since
+  // both pages already read the same `files` array by reference.
+  const [bookmarks, setBookmarks] = React.useState({}); // {fileId: Set(lineIdx)}
+  const [readerPrefs, setReaderPrefs] = React.useState({ query: '', levels: {ERROR:true, FATAL:true, WARN:true, INFO:true}, tail: false });
+  const [selection, setSelection] = React.useState(null); // {fileId, idx} | null
+  const [timeWindowsState, setTimeWindowsState] = React.useState({}); // {fileId: [lo,hi]} — absent key = full span
+
+  // Live streaming — a local synthetic generator (tools/live-log-server.js)
+  // feeds lines over SSE into a rolling capped buffer, matched against the
+  // same shared LogStream/kb as every other file. kbRef exists because the
+  // SSE handler is a long-lived closure that would otherwise see a stale kb
+  // on every tick; liveFileRef is the equivalent for the line buffer.
+  const LIVE_CAP = 500;
+  const LIVE_ANALYZE_EVERY = 12;
+  const [liveConnected, setLiveConnected] = React.useState(false);
+  const [liveUrl, setLiveUrl] = React.useState('http://127.0.0.1:8090/stream');
+  const [liveFile, setLiveFile] = React.useState({ id: 'live-feed', name: 'live-feed.stream', size: 0, type: 'unknown', lines: [] });
+  const liveFileRef = React.useRef(liveFile);
+  const liveSourceRef = React.useRef(null);
+  const liveTickRef = React.useRef(0);
+  const kbRef = React.useRef(kb);
+  React.useEffect(() => { kbRef.current = kb; }, [kb]);
+  React.useEffect(() => () => { if (liveSourceRef.current) liveSourceRef.current.close(); }, []);
 
   const tweaks = window.useTweaks ? window.useTweaks(DEFAULTS) : [DEFAULTS, ()=>{}];
   const [tweakState, setTweakState] = tweaks;
@@ -51,7 +83,131 @@ function App() {
     const names = new Set(prev.map(p => p.name));
     return [...prev, ...arr.filter(a => !names.has(a.name))];
   });
-  const removeFile = (id) => setFiles(prev => prev.filter(f => f.id !== id));
+  const removeFile = (id) => {
+    setFiles(prev => prev.filter(f => f.id !== id));
+    setBookmarks(prev => { if (!prev[id]) return prev; const next = {...prev}; delete next[id]; return next; });
+    setTimeWindowsState(prev => { if (!(id in prev)) return prev; const next = {...prev}; delete next[id]; return next; });
+    setSelection(prev => (prev && prev.fileId === id) ? null : prev);
+  };
+
+  const toggleBookmark = (fileId, idx) => {
+    setBookmarks(prev => {
+      const next = {...prev};
+      const s = new Set(next[fileId] || []);
+      if (s.has(idx)) s.delete(idx); else s.add(idx);
+      next[fileId] = s;
+      return next;
+    });
+  };
+  const patchReaderPrefs = (partial) => setReaderPrefs(prev => ({...prev, ...partial}));
+  const selectLine = (fileId, idx) => setSelection({ fileId, idx });
+  const setTimeWindow = (fileId, win) => {
+    setTimeWindowsState(prev => {
+      const next = {...prev};
+      if (win == null) delete next[fileId]; else next[fileId] = win;
+      return next;
+    });
+  };
+
+  // Shared by the static Miner scan and the live-feed's periodic re-analyze:
+  // bump frequency/last_seen/source_files on existing matches, and append any
+  // freshly-mined patterns into unknown_logs.
+  const applyAnalysisToKB = (out) => {
+    setKb(prev => {
+      const next = JSON.parse(JSON.stringify(prev));
+      const today = new Date().toISOString().slice(0,10);
+      out.aggregated.forEach(a => {
+        for (const bucket of Object.values(next)) {
+          const p = bucket.patterns.find(x => x.id === a.pattern.id);
+          if (p) {
+            p.frequency = (p.frequency||0) + a.totalHits;
+            p.last_seen = today;
+            const newSources = new Set([...(p.source_files||[]), ...a.matchingFiles.map(mf => mf.name)]);
+            p.source_files = [...newSources];
+          }
+        }
+      });
+      out.newPatterns.forEach(p => { next.unknown_logs.patterns.push(p); });
+      return next;
+    });
+    // Nobody has triaged these yet (mineNewPatterns seeds a placeholder fix
+    // and fixStatus:'pending') — ask the local suggest-fix proxy for a real
+    // one. Fire-and-forget per pattern; each call patches only its own id.
+    out.newPatterns.forEach(p => requestSuggestFix(p));
+  };
+
+  // By-id patch across KB buckets — same shape as saveFix below, reused for
+  // AI suggest-fix results so there's one way to mutate a pattern in place.
+  const patchPattern = (patternId, patch) => {
+    setKb(prev => {
+      const next = JSON.parse(JSON.stringify(prev));
+      for (const bucket of Object.values(next)) {
+        const p = bucket.patterns.find(x => x.id === patternId);
+        if (p) { Object.assign(p, patch); break; }
+      }
+      return next;
+    });
+  };
+
+  const requestSuggestFix = (pattern) => {
+    // kbRef, not the closed-over `kb` state — requestSuggestFix is called
+    // from applyAnalysisToKB, which the live SSE loop invokes from a
+    // long-lived closure that would otherwise see a stale KB (same reason
+    // kbRef exists at all, see connectLive above).
+    //
+    // Send the whole knowledge base rather than pre-filtering to a handful
+    // of keyword-overlap matches (PatternEngine.suggestRelated, used for the
+    // separate "solutions from similar past incidents" panel) — that scoring
+    // is crude enough to miss genuinely related patterns (e.g. "pool" vs.
+    // "connection pool" don't literally overlap), and the KB is small enough
+    // right now that letting the model see everything and decide what's
+    // relevant itself is simpler and more robust than fixing the matcher.
+    const knowledgeBase = Object.entries(kbRef.current).flatMap(([category, bucket]) =>
+      (bucket.patterns || [])
+        .filter(p => p.id !== pattern.id)
+        .map(p => ({
+          id: p.id,
+          category,
+          title: p.title,
+          description: p.description,
+          keywords: p.keywords,
+          fix: p.fix,
+          applied_fix: p.applied_fix ? p.applied_fix.text : null,
+        }))
+    );
+
+    fetch(SUGGEST_FIX_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: pattern.id,
+        title: pattern.title,
+        description: pattern.description,
+        category: pattern.category,
+        keywords: pattern.keywords,
+        examples: pattern.examples,
+        knowledgeBase,
+      }),
+    })
+      .then(res => res.ok ? res.json() : res.json().then(e => Promise.reject(new Error(e.error || ('HTTP ' + res.status)))))
+      .then(({ fix, human_intervention }) => {
+        patchPattern(pattern.id, { fix, human_intervention, fixStatus: 'done' });
+      })
+      .catch(() => {
+        patchPattern(pattern.id, { fixStatus: 'error' });
+      });
+  };
+
+  const retrySuggestFix = (patternId) => {
+    let found = null;
+    for (const bucket of Object.values(kb)) {
+      const p = bucket.patterns.find(x => x.id === patternId);
+      if (p) { found = p; break; }
+    }
+    if (!found) return;
+    patchPattern(patternId, { fixStatus: 'pending' });
+    requestSuggestFix(found);
+  };
 
   const processLogs = async () => {
     if (files.length === 0) return;
@@ -88,23 +244,7 @@ function App() {
 
     const out = window.PatternEngine.analyze(files, kb, 0.5);
     setResults(out);
-
-    setKb(prev => {
-      const next = JSON.parse(JSON.stringify(prev));
-      out.aggregated.forEach(a => {
-        for (const bucket of Object.values(next)) {
-          const p = bucket.patterns.find(x => x.id === a.pattern.id);
-          if (p) {
-            p.frequency = (p.frequency||0) + a.totalHits;
-            p.last_seen = '2026-04-22';
-            const newSources = new Set([...(p.source_files||[]), ...a.matchingFiles.map(mf => mf.name)]);
-            p.source_files = [...newSources];
-          }
-        }
-      });
-      out.newPatterns.forEach(p => { next.unknown_logs.patterns.push(p); });
-      return next;
-    });
+    applyAnalysisToKB(out);
 
     // Record a session in history
     const now = new Date();
@@ -126,6 +266,52 @@ function App() {
 
     if (window.Aura) { window.Aura.stopAmbience(); window.Aura.cueComplete(); }
     setProcessing(null);
+  };
+
+  const connectLive = () => {
+    if (liveSourceRef.current || typeof EventSource === 'undefined') return;
+    let es;
+    try { es = new EventSource(liveUrl); }
+    catch (e) { pushToast({ title: 'Live connection failed', body: String(e && e.message || e) }); return; }
+
+    liveSourceRef.current = es;
+    setLiveConnected(true);
+
+    es.onmessage = (evt) => {
+      let line;
+      try { line = JSON.parse(evt.data); } catch { return; }
+
+      const nextLines = [...liveFileRef.current.lines, line];
+      if (nextLines.length > LIVE_CAP) nextLines.splice(0, nextLines.length - LIVE_CAP);
+      liveFileRef.current = { ...liveFileRef.current, lines: nextLines };
+      setLiveFile(liveFileRef.current);
+
+      liveTickRef.current += 1;
+      if (liveTickRef.current % LIVE_ANALYZE_EVERY === 0) {
+        const out = window.PatternEngine.analyze([liveFileRef.current], kbRef.current, 0.5);
+        if (out.aggregated.length || out.newPatterns.length) applyAnalysisToKB(out);
+        out.newPatterns.slice(0,2).forEach(p => {
+          pushToast({ title: 'New pattern discovered · live', body: `${p.id} · logged to unknown_logs` });
+          if (window.Aura) window.Aura.cueMatch();
+        });
+      }
+    };
+
+    es.onerror = () => {
+      // EventSource auto-retries on its own; just leave the status as-is
+      // rather than tearing the connection down on a transient network blip.
+    };
+  };
+
+  const disconnectLive = () => {
+    if (liveSourceRef.current) { liveSourceRef.current.close(); liveSourceRef.current = null; }
+    setLiveConnected(false);
+  };
+
+  const clearLiveBuffer = () => {
+    liveFileRef.current = { ...liveFileRef.current, lines: [] };
+    setLiveFile(liveFileRef.current);
+    liveTickRef.current = 0;
   };
 
   const openPattern = (id) => { setLastPage(page); setDetailId(id); setPage('detail'); };
@@ -179,6 +365,9 @@ function App() {
               <button className={page==='history'?'active':''} onClick={() => setPage('history')}>
                 History {history.length>0 && <span className="badge">{history.length}</span>}
               </button>
+              <button className={page==='live'?'active':''} onClick={() => setPage('live')}>
+                Live {liveConnected && <span className="live-dot"/>}
+              </button>
             </nav>
           </div>
           <div className="topbar-right">
@@ -217,12 +406,32 @@ function App() {
           {page === 'miner' && (
             <div className="dashboard">
               <window.UploadPanel files={files} onAdd={addFiles} onRemove={removeFile} onProcess={processLogs} processing={processing}/>
-              <window.Scanner files={files} processing={processing} results={results}/>
+              <window.Scanner files={files} processing={processing} results={results} kb={kb}
+                bookmarks={bookmarks} onToggleBookmark={toggleBookmark}
+                reader={readerPrefs} onReaderChange={patchReaderPrefs}
+                selection={selection} onSelect={selectLine}
+                timeWindows={timeWindowsState} onTimeWindowChange={setTimeWindow}
+                onOpenPattern={openPattern}/>
               <window.ResultsPanel files={files} results={results} onOpen={openPattern}/>
             </div>
           )}
           {page === 'viewer' && (
-            <window.LogViewer files={files} kb={kb} onOpenPattern={openPattern} onAddFiles={addFiles}/>
+            <window.LogViewer files={files} kb={kb} onOpenPattern={openPattern} onAddFiles={addFiles}
+              bookmarks={bookmarks} onToggleBookmark={toggleBookmark}
+              reader={readerPrefs} onReaderChange={patchReaderPrefs}
+              selection={selection} onSelect={selectLine}
+              timeWindows={timeWindowsState} onTimeWindowChange={setTimeWindow}/>
+          )}
+          {page === 'live' && (
+            <window.LivePage
+              file={liveFile} kb={kb}
+              connected={liveConnected} url={liveUrl} onUrlChange={setLiveUrl}
+              onConnect={connectLive} onDisconnect={disconnectLive} onClear={clearLiveBuffer}
+              onOpenPattern={openPattern}
+              bookmarks={bookmarks} onToggleBookmark={toggleBookmark}
+              reader={readerPrefs} onReaderChange={patchReaderPrefs}
+              selection={selection} onSelect={selectLine}
+              timeWindows={timeWindowsState} onTimeWindowChange={setTimeWindow}/>
           )}
           {page === 'kb' && (
             <window.KnowledgeBase kb={kb} onOpen={openPattern} onExport={exportKB}/>
@@ -239,6 +448,7 @@ function App() {
               onBack={() => { setPage(lastPage); setDetailId(null); }}
               onOpen={openPattern}
               onSaveFix={saveFix}
+              onRetrySuggestFix={retrySuggestFix}
             />
           )}
         </main>

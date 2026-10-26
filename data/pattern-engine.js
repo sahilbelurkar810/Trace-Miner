@@ -26,11 +26,24 @@ window.PatternEngine = (function() {
     return bestScore > 0 ? best : 'unknown_logs';
   }
 
+  // Timestamp fragments — e.g. '2026-04-22t08' or '018z' (the leftover of
+  // ISO ".018Z" once punctuation is stripped to spaces above). Uploaded-file
+  // lines carry `msg: raw` (full line, timestamp included — see
+  // data/log-parse.js), so without this filter two occurrences of the exact
+  // same error at different times tokenize to different leading tokens,
+  // which both pollutes keyword-overlap matching (a shared generic '000z'
+  // can cross the match threshold on its own) and splits what should be one
+  // mined pattern into several, each getting its own separate AI-suggested-
+  // fix call downstream.
+  const TIMESTAMP_DATE_RE = /^\d{4}-\d{2}-\d{2}(t\d*)?$/;
+  const TIMESTAMP_MS_RE = /^\d{1,3}z$/;
+
   function tokenize(text) {
     return (text||'').toLowerCase()
       .replace(/[^a-z0-9\s_\-\/]/g,' ')
       .split(/\s+/)
-      .filter(w => w && w.length > 2 && !STOPWORDS.has(w) && !/^\d+$/.test(w));
+      .filter(w => w && w.length > 2 && !STOPWORDS.has(w) && !/^\d+$/.test(w))
+      .filter(w => !TIMESTAMP_DATE_RE.test(w) && !TIMESTAMP_MS_RE.test(w));
   }
 
   // Error/warn lines only — those carry the pattern signal
@@ -131,7 +144,32 @@ window.PatternEngine = (function() {
           avg_resolution_min: null,
         },
         isNew: true,
+        // No human has triaged this pattern yet — App.jsx kicks off an AI
+        // suggestion call right after it's merged into the KB and flips this
+        // to 'done'/'error'. Absent entirely on hand-authored KB patterns.
+        fixStatus: 'pending',
       }));
+  }
+
+  // Find patterns related to `pattern` by keyword overlap (plus an explicit
+  // related_patterns boost). Shared by Pages.jsx's "Solutions from similar
+  // past incidents" block and App.jsx's suggest-fix request, which feeds
+  // their fix/applied_fix text to the LLM so it can build on a proven
+  // remediation instead of guessing blind.
+  function suggestRelated(pattern, kb, limit = 3) {
+    const kws = new Set((pattern.keywords||[]).map(k => k.toLowerCase()));
+    const all = [];
+    for (const [cat, bucket] of Object.entries(kb)) {
+      for (const p of bucket.patterns) {
+        if (p.id === pattern.id) continue;
+        const other = new Set((p.keywords||[]).map(k => k.toLowerCase()));
+        let overlap = 0;
+        kws.forEach(k => { if (other.has(k)) overlap += 1; });
+        if ((pattern.related_patterns||[]).includes(p.id)) overlap += 2;
+        if (overlap > 0) all.push({pattern: p, category: cat, score: overlap / Math.max(1, Math.max(kws.size, other.size))});
+      }
+    }
+    return all.sort((a,b) => b.score - a.score).slice(0, limit);
   }
 
   function titleCase(s) {
@@ -179,5 +217,5 @@ window.PatternEngine = (function() {
     return { fileResults, aggregated, newPatterns };
   }
 
-  return { analyze, detectCategory, matchAgainstKB, mineNewPatterns, tokenize };
+  return { analyze, detectCategory, matchAgainstKB, mineNewPatterns, tokenize, suggestRelated };
 })();

@@ -1,0 +1,4 @@
+{
+  "cleanUrls": true,
+  "functions": { "api/suggest-fix.js": { "includeFiles": "tools/suggest-fix.js", "maxDuration": 30 } }
+}

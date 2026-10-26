@@ -7,10 +7,6 @@ const CATEGORY_LABELS = {
   unknown_logs: 'Unknown',
 };
 
-function FileTypeIcon({ type }) {
-  return <div className={`fi-type ${type||'unknown'}`}>{(type||'??').slice(0,3).toUpperCase()}</div>;
-}
-
 function UploadPanel({ files, onAdd, onRemove, onProcess, processing }) {
   const [over, setOver] = React.useState(false);
 
@@ -18,7 +14,7 @@ function UploadPanel({ files, onAdd, onRemove, onProcess, processing }) {
     const arr = [];
     for (const f of fileList) {
       const text = await f.text();
-      const lines = parseLogText(text, f.name);
+      const lines = window.LogParse.parseLogText(text, f.name);
       const cat = window.PatternEngine.detectCategory(lines);
       arr.push({
         id: f.name + '-' + Date.now(),
@@ -71,10 +67,10 @@ function UploadPanel({ files, onAdd, onRemove, onProcess, processing }) {
           <div className="file-list">
             {files.map(f => (
               <div key={f.id} className={"file-item" + (processing && processing.fileId===f.id ? " scanning" : "")}>
-                <FileTypeIcon type={f.type}/>
+                <window.FileTypeIcon type={f.type}/>
                 <div className="fi-body">
                   <div className="fi-name">{f.name}</div>
-                  <div className="fi-meta">{formatSize(f.size)} · {f.lines.length} lines</div>
+                  <div className="fi-meta">{window.LogParse.formatSize(f.size)} · {f.lines.length} lines</div>
                 </div>
                 {!processing && (
                   <button className="fi-remove" onClick={() => onRemove(f.id)}>×</button>
@@ -90,25 +86,6 @@ function UploadPanel({ files, onAdd, onRemove, onProcess, processing }) {
       </div>
     </div>
   );
-}
-
-function parseLogText(text, fileName) {
-  const rows = text.split(/\r?\n/).filter(l => l.trim());
-  return rows.slice(0, 500).map(raw => {
-    const tsMatch = raw.match(/(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}[.\dZ+:-]*)/);
-    const lvlMatch = raw.match(/\b(INFO|WARN(?:ING)?|ERROR|FATAL|DEBUG|TRACE)\b/i);
-    return {
-      ts: tsMatch ? tsMatch[1] : '',
-      level: lvlMatch ? lvlMatch[1].toUpperCase().replace('WARNING','WARN') : 'INFO',
-      msg: raw, raw,
-    };
-  });
-}
-
-function formatSize(bytes) {
-  if (bytes < 1024) return bytes + ' B';
-  if (bytes < 1024*1024) return (bytes/1024).toFixed(1) + ' KB';
-  return (bytes/1024/1024).toFixed(1) + ' MB';
 }
 
 // ========== Glassmorphic Scan Splash ==========
@@ -250,37 +227,28 @@ function ScanSplash({ files, processing }) {
   );
 }
 
-// ========== Live scan pane (file tabs + log view, no robot) ==========
-function Scanner({ files, processing, results }) {
+// ========== Live scan pane (file tabs + shared LogStream reader) ==========
+function Scanner({
+  files, processing, results, kb,
+  bookmarks, onToggleBookmark,
+  reader, onReaderChange,
+  selection, onSelect,
+  timeWindows, onTimeWindowChange,
+  onOpenPattern,
+}) {
   const [visibleTab, setVisibleTab] = React.useState(null);
-  const shownFile = files.find(f => f.id === (visibleTab || (files[0] && files[0].id)));
-  const streamRef = React.useRef(null);
-
-  const matchedLinesByFile = React.useMemo(() => {
-    const m = {};
-    if (!results) return m;
-    results.fileResults.forEach(fr => {
-      m[fr.file.id] = new Set(fr.matches.flatMap(x => x.matchedLineIdxs));
-    });
-    return m;
-  }, [results]);
+  const shownFile = files.find(f => f.id === (visibleTab || (files[0] && files[0].id))) || null;
 
   // auto-switch to the file currently being processed
   React.useEffect(() => {
     if (processing?.fileId) setVisibleTab(processing.fileId);
   }, [processing?.fileId]);
 
-  // auto-scroll to the line being scanned
-  React.useEffect(() => {
-    if (processing && streamRef.current) {
-      const el = streamRef.current.querySelector(`[data-line="${processing.lineIdx}"]`);
-      if (el) el.scrollIntoView({block:'center', behavior:'smooth'});
-    }
-  }, [processing?.lineIdx]);
-
   let state = 'idle';
   if (processing) state = 'scanning';
   else if (results) state = 'done';
+
+  const focusLineIdx = (processing && shownFile && processing.fileId === shownFile.id) ? processing.lineIdx : null;
 
   return (
     <div className="scanner" style={{position:'relative'}}>
@@ -299,42 +267,39 @@ function Scanner({ files, processing, results }) {
 
       <div className="scanner-body no-robot">
         <div className="log-view full">
-          <div className="log-tabs">
-            {files.map(f => (
-              <button key={f.id}
-                className={"log-tab" + (shownFile && shownFile.id===f.id?' active':'') + (processing?.fileId===f.id?' processing':'')}
-                onClick={() => setVisibleTab(f.id)}>
-                <span className={"type-badge " + (f.type||'unknown')}/>
-                {f.name}
-              </button>
-            ))}
-            {files.length === 0 && (
-              <div style={{padding:'20px', fontSize:12, color:'var(--fg-3)', fontFamily:'var(--mono)'}}>No logs loaded. Drop files on the left to begin.</div>
-            )}
-          </div>
-          <div className="log-stream" ref={streamRef}>
-            {shownFile && shownFile.lines.map((line, i) => {
-              const isMatched = (matchedLinesByFile[shownFile.id] || new Set()).has(i);
-              const isScanning = processing && processing.fileId===shownFile.id && i === processing.lineIdx;
-              return (
-                <div key={i} data-line={i} className={"log-line" + (isMatched?' matched':'') + (isScanning?' scanning':'')}>
-                  <span className="ln">{String(i+1).padStart(3,'0')}</span>
-                  <span className="ts">{(line.ts||'').slice(11,19) || '—'}</span>
-                  <span className="m">
-                    <span className={"lvl " + line.level}>{line.level}</span>
-                    {' '}{line.msg}
-                  </span>
-                </div>
-              );
-            })}
-            {!shownFile && (
-              <div style={{padding:'60px 24px', textAlign:'center', color:'var(--fg-3)', fontSize:13, lineHeight: 1.6}}>
-                Logs will appear here once uploaded.<br/>
-                Each line is tokenised, compared against known patterns, and<br/>
-                indexed for future recognition.
+          <window.LogStream
+            file={shownFile}
+            files={files}
+            kb={kb}
+            reader={reader}
+            onReaderChange={onReaderChange}
+            selection={selection}
+            onSelect={onSelect}
+            onJumpBookmark={(fileId, idx) => { setVisibleTab(fileId); onSelect(fileId, idx); }}
+            bookmarks={bookmarks}
+            onToggleBookmark={onToggleBookmark}
+            timeWindow={shownFile ? (timeWindows[shownFile.id] || null) : null}
+            onTimeWindowChange={(win) => shownFile && onTimeWindowChange(shownFile.id, win)}
+            focusLineIdx={focusLineIdx}
+            onOpenPattern={onOpenPattern}
+            detailsMode="drawer"
+            className="embedded"
+            header={
+              <div className="log-tabs">
+                {files.map(f => (
+                  <button key={f.id}
+                    className={"log-tab" + (shownFile && shownFile.id===f.id?' active':'') + (processing?.fileId===f.id?' processing':'')}
+                    onClick={() => setVisibleTab(f.id)}>
+                    <span className={"type-badge " + (f.type||'unknown')}/>
+                    {f.name}
+                  </button>
+                ))}
+                {files.length === 0 && (
+                  <div style={{padding:'20px', fontSize:12, color:'var(--fg-3)', fontFamily:'var(--mono)'}}>No logs loaded. Drop files on the left to begin.</div>
+                )}
               </div>
-            )}
-          </div>
+            }
+          />
         </div>
       </div>
 
@@ -426,5 +391,4 @@ window.UploadPanel = UploadPanel;
 window.Scanner = Scanner;
 window.ResultsPanel = ResultsPanel;
 window.PatternCard = PatternCard;
-window.FileTypeIcon = FileTypeIcon;
 window.CATEGORY_LABELS = CATEGORY_LABELS;
