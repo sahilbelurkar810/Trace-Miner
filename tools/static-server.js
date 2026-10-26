@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-// Minimal static file server for the app itself (Trace Miner.html + assets).
+// Minimal static file server for the app itself (index.html + assets).
 // Zero npm dependencies, matching tools/live-log-server.js.
 //
 // Usage:
 //   node tools/static-server.js [port]
-// Then open http://localhost:<port>/ (defaults to Trace Miner.html).
+// Then open http://localhost:<port>/ (defaults to index.html).
 
 const http = require('http');
 const fs = require('fs');
@@ -21,7 +21,7 @@ const MIME = {
 
 http.createServer((req, res) => {
   let p = decodeURIComponent(req.url.split('?')[0]);
-  if (p === '/') p = '/Trace Miner.html';
+  if (p === '/') p = '/index.html';
   const full = path.join(ROOT, p);
   fs.readFile(full, (err, data) => {
     if (err) { res.writeHead(404); res.end('not found: ' + p); return; }

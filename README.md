@@ -35,7 +35,7 @@ state is in-memory for the lifetime of the tab.
 
 ## Quick start
 
-The app must be served over HTTP — opening `Trace Miner.html` directly via
+The app must be served over HTTP — opening `index.html` directly via
 `file://` will fail because Babel-Standalone fetches the `<script type="text/babel">`
 sources, and browsers block `file://` fetches cross-origin.
 
@@ -91,7 +91,7 @@ the home.
 
 ```
 trace-miner/
-  Trace Miner.html              entry point — loads React/Babel UMD + scripts
+  index.html              entry point — loads React/Babel UMD + scripts
   tweaks-panel.jsx              reusable tweaks-panel shell (radio, toggle, slider...)
   README.md                     this file
 
@@ -798,7 +798,7 @@ Either:
 
 1. Write a new component in `components/` that registers `window.YourPage`.
 2. Add `<script type="text/babel" src="components/YourPage.jsx?v=N"/>` to
-   `Trace Miner.html`.
+   `index.html`.
 3. Add a nav button in `App.jsx`'s `<nav className="topnav">` and a case
    in the `page === 'yours'` render block.
 
