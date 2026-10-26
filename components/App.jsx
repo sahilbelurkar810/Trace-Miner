@@ -13,7 +13,10 @@ const ACCENTS = {
 
 // Local dev server (tools/live-log-server.js) that also proxies AI fix
 // suggestions — same port it already defaults to for /stream.
-const SUGGEST_FIX_URL = 'http://127.0.0.1:8090/suggest-fix';
+// On a deployed host (Vercel) it goes to the serverless function instead.
+const SUGGEST_FIX_URL = ['localhost', '127.0.0.1', ''].includes(location.hostname)
+  ? 'http://127.0.0.1:8090/suggest-fix'
+  : '/api/suggest-fix';
 
 function App() {
   const [booted, setBooted] = React.useState(false);
